@@ -1,0 +1,2682 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Kafka, du capteur au flux</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Public+Sans:ital,wght@0,400;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout : scène 16:9 de 1280×720 mise à l'échelle (projection) ; en dessous de 800px, les slides s'empilent en lecture verticale.
+   Motif : la présentation est elle-même un log — chaque partie est une partition, chaque slide un offset. */
+:root{
+  --bg:#F2F2F2; --surface:#FFFFFF; --ink:#242222; --muted:#696363; --line:#D9D5D5; --line-strong:#ACA5A5;
+  --accent:#A05259; --accent-ink:#FFFFFF; --accent-soft:#ECDCDD;
+  --warn:#A85A06; --warn-soft:#F7E8D3;
+  --code-bg:#252323; --code-fg:#EEEAEA; --code-com:#9A9393; --code-str:#D9A8AC; --code-key:#F0C27A; --code-kw:#9CC8E8;
+  --display:"Bricolage Grotesque","Avenir Next","Segoe UI",system-ui,sans-serif;
+  --body:"Public Sans","Segoe UI",system-ui,-apple-system,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#181717; --surface:#242222; --ink:#EEEAEA; --muted:#ACA5A5; --line:#3A3636; --line-strong:#5B5454;
+  --accent:#CF7A82; --accent-ink:#241012; --accent-soft:#422B2E;
+  --warn:#E9A456; --warn-soft:#3A2913;
+  --code-bg:#101010; --code-fg:#EEEAEA; --code-com:#8D8585; --code-str:#D9A8AC; --code-key:#F0C27A; --code-kw:#9CC8E8;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#181717; --surface:#242222; --ink:#EEEAEA; --muted:#ACA5A5; --line:#3A3636; --line-strong:#5B5454;
+  --accent:#CF7A82; --accent-ink:#241012; --accent-soft:#422B2E;
+  --warn:#E9A456; --warn-soft:#3A2913;
+  --code-bg:#101010; --code-fg:#EEEAEA; --code-com:#8D8585; --code-str:#D9A8AC; --code-key:#F0C27A; --code-kw:#9CC8E8;
+  color-scheme:dark}
+
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);margin:0;overflow:hidden}
+*{box-sizing:border-box}
+
+/* ---------- scène ---------- */
+.deck{position:fixed;inset:0;display:grid;place-items:center;overflow:hidden}
+.stage{width:1280px;height:720px;position:relative;transform-origin:center center;flex:none}
+.slide{position:absolute;inset:0;background:var(--bg);padding:48px 72px 70px;display:flex;flex-direction:column;gap:18px;container-type:inline-size;overflow:hidden}
+.slide[hidden]{display:none!important}
+.slide::after{content:"";position:absolute;left:16px;bottom:17px;width:184px;aspect-ratio:1024/298;background:url("Template%20GP/logo-png-GP@72x-1024x298.png") center/contain no-repeat;pointer-events:none}
+
+/* ---------- typographie ---------- */
+.eyebrow{font-family:var(--mono);font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);display:flex;gap:14px;align-items:center}
+.eyebrow .tag{border:1px solid var(--accent);padding:2px 8px;border-radius:3px}
+h1,h2,h3{font-family:var(--display);margin:0;text-wrap:balance;letter-spacing:-.01em}
+h1{font-size:clamp(34px,6.2cqi,80px);line-height:.98;font-weight:800}
+h2{font-size:clamp(26px,3.3cqi,42px);line-height:1.08;font-weight:700}
+h3{font-size:clamp(18px,1.75cqi,22px);font-weight:700;line-height:1.2}
+p,li{font-size:clamp(15px,1.66cqi,21px);line-height:1.45;margin:0}
+.lead{font-size:clamp(17px,1.95cqi,25px);line-height:1.4;max-width:62ch;color:var(--ink)}
+.muted{color:var(--muted)}
+.small{font-size:clamp(13px,1.3cqi,16px)}
+code,.mono{font-family:var(--mono);font-size:.88em}
+p code,li code,td code{background:var(--accent-soft);padding:1px 5px;border-radius:3px;color:var(--ink)}
+strong{font-weight:700}
+ul.list{margin:0;padding:0;list-style:none;display:grid;gap:10px}
+ul.list li{padding-left:22px;position:relative}
+ul.list li::before{content:"";position:absolute;left:2px;top:.62em;width:9px;height:9px;border-radius:2px;background:var(--accent)}
+ol.steps{margin:0;padding:0;list-style:none;counter-reset:s;display:grid;gap:12px}
+ol.steps li{counter-increment:s;padding-left:40px;position:relative}
+ol.steps li::before{content:counter(s);position:absolute;left:0;top:0;width:28px;height:28px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-family:var(--mono);font-size:14px;display:grid;place-items:center;font-weight:600}
+
+/* ---------- mises en page ---------- */
+.body{flex:1;min-height:0;display:flex;flex-direction:column;gap:16px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:36px;min-height:0;align-items:start}
+.cols.w64{grid-template-columns:1.5fr 1fr}
+.cols.w46{grid-template-columns:1fr 1.5fr}
+.cols>*{min-width:0}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.cards.c2{grid-template-columns:repeat(2,1fr)}
+.cards.c4{grid-template-columns:repeat(4,1fr)}
+.cards>*{min-width:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:16px 18px;display:flex;flex-direction:column;gap:6px}
+.card h3{font-size:clamp(17px,1.66cqi,21px)}
+.card p{font-size:clamp(14px,1.45cqi,18px);color:var(--muted)}
+.card .k{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+.stack{display:flex;flex-direction:column;gap:14px;min-width:0}
+.center{align-items:center;justify-content:center}
+.grow{flex:1}
+
+/* encadrés */
+.analogy,.warn,.key{border-radius:6px;padding:14px 18px;display:flex;flex-direction:column;gap:4px}
+.analogy{background:var(--accent-soft)}
+.warn{background:var(--warn-soft)}
+.key{border:1.5px solid var(--accent)}
+.analogy::before,.warn::before,.key::before{font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;font-weight:600}
+.analogy::before{content:"Dans la vraie vie";color:var(--accent)}
+.warn::before{content:"Attention";color:var(--warn)}
+.key::before{content:attr(data-k);color:var(--accent)}
+.analogy p,.warn p,.key p{font-size:clamp(14px,1.55cqi,19px)}
+
+/* tableaux */
+.tw{overflow-x:auto;min-width:0}
+table.t{border-collapse:collapse;width:100%;font-size:clamp(13px,1.4cqi,17.5px)}
+table.t th{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:left;font-weight:600;padding:6px 10px;border-bottom:1.5px solid var(--line-strong)}
+table.t td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top;line-height:1.35}
+table.t td:first-child{font-weight:600}
+table.t td code{white-space:nowrap}
+table.t.cfg td:first-child{font-family:var(--mono);font-size:.86em;font-weight:600;color:var(--accent);word-break:break-all}
+table.t tr.hl td{background:var(--accent-soft)}
+
+/* code */
+.code{position:relative;background:var(--code-bg);border-radius:6px;min-height:0;display:flex;flex-direction:column}
+.code pre{margin:0;padding:14px 18px;overflow:auto;font-family:var(--mono);font-size:clamp(11.5px,1.25cqi,15.5px);line-height:1.5;color:var(--code-fg);tab-size:4}
+.code.sm pre{font-size:clamp(11px,1.12cqi,14px);line-height:1.45}
+.code>.copy+pre{padding-top:38px}
+.slide a{color:var(--accent);text-underline-offset:2px}
+.code.scroll{flex:1}
+.code.scroll pre{flex:1}
+.code .copy{position:absolute;top:8px;right:8px;font:600 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;background:transparent;color:var(--code-com);border:1px solid var(--code-com);border-radius:4px;padding:4px 8px;cursor:pointer;z-index:1}
+.code .copy:hover,.code .copy:focus-visible{color:var(--code-fg);border-color:var(--code-fg)}
+.code .fname{font:600 11px var(--mono);color:var(--code-com);padding:10px 18px 0;letter-spacing:.06em}
+.tk-c{color:var(--code-com);font-style:italic}.tk-s{color:var(--code-str)}.tk-k{color:var(--code-key)}.tk-w{color:var(--code-kw)}.tk-p{color:var(--code-key);font-weight:600}
+
+/* diagrammes */
+.dg{width:100%;height:auto;max-height:100%;display:block;overflow:visible}
+.dgw{min-height:0;display:flex;align-items:center;justify-content:center;flex:1}
+.dg text{font-family:var(--body);font-size:15px;fill:var(--ink)}
+.dg .mono{font-family:var(--mono);font-size:14px}
+.dg .small{font-size:13px}
+.dg .mut{fill:var(--muted)}
+.dg .acc{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.dg text.acc,.dg .atxt{fill:var(--accent)}
+.dg .strong{font-weight:700}
+.dg .lbl{font-family:var(--mono);font-size:12.5px;letter-spacing:.1em;fill:var(--muted)}
+.dg .lbl.acc{fill:var(--accent);stroke:none}
+.dg .wtxt{fill:var(--warn);font-weight:600}
+.dg .atxt{font-weight:600}
+.dg .box{fill:var(--surface);stroke:var(--line-strong);stroke-width:1.2}
+.dg .frame{fill:none;stroke:var(--line-strong);stroke-width:1.2}
+.dg .cell{fill:var(--surface);stroke:var(--line-strong)}
+.dg .cellnew{fill:none;stroke:var(--accent);stroke-dasharray:4 3;stroke-width:1.5}
+.dg .ln{stroke:var(--muted);stroke-width:1.5;fill:none}
+.dg .lnA{stroke:var(--accent);stroke-width:2}
+.dg .thin{stroke-width:1}
+.dg .dash{stroke-dasharray:5 4}
+.dg .ahp{fill:var(--muted)}.dg .ahpa{fill:var(--accent)}
+
+/* pied de slide = log */
+.foot{position:absolute;left:220px;right:500px;bottom:22px;display:flex;justify-content:space-between;align-items:center;gap:20px;font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.04em;white-space:nowrap}
+.foot .off b{color:var(--accent);font-weight:600}
+
+/* slide de titre */
+.slide.title{justify-content:space-between;padding-top:64px}
+.slide.title .sub{font-family:var(--display);font-size:clamp(18px,2.3cqi,30px);font-weight:500;color:var(--muted);max-width:30ch;line-height:1.2}
+.tape{display:flex;gap:6px;overflow:hidden;mask-image:linear-gradient(90deg,transparent,#000 8%,#000 100%);-webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 100%);justify-content:flex-end}
+.tape .ev{flex:none;border:1px solid var(--line-strong);background:var(--surface);border-radius:4px;padding:8px 12px;font-family:var(--mono);font-size:13px;display:flex;flex-direction:column;gap:2px;min-width:150px}
+.tape .ev i{font-style:normal;color:var(--muted);font-size:11px}
+.tape .ev.new{border-color:var(--accent);animation:pop .5s ease-out}
+@keyframes pop{from{transform:translateX(24px);opacity:.3}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion: reduce){.tape .ev.new{animation:none}}
+
+/* intercalaires de partie */
+.slide.divider{background:var(--bg);color:var(--ink);justify-content:center;gap:22px;border-top:10px solid var(--accent)}
+.slide.divider .eyebrow{color:var(--accent)}
+.slide.divider .eyebrow .tag{border-color:var(--accent)}
+.slide.divider h1{font-size:clamp(40px,8cqi,104px)}
+.slide.divider p{font-size:clamp(17px,2cqi,26px);max-width:40ch;color:var(--muted)}
+.slide.divider .foot{color:var(--muted)}
+.slide.divider .foot .off b{color:var(--accent)}
+.ptape{display:flex;gap:6px;margin-top:10px}
+.ptape span{width:64px;height:40px;border:1.5px solid var(--accent);color:var(--accent);border-radius:4px;display:grid;place-items:center;font-family:var(--mono);font-size:13px}
+.ptape span.on{background:var(--accent);color:var(--accent-ink)}
+
+/* timeline */
+.tl{display:grid;grid-template-columns:repeat(6,1fr);gap:0;border-top:2px solid var(--line-strong);margin-top:16px}
+.tl>div{padding:14px 12px 0 0;position:relative;min-width:0}
+.tl>div::before{content:"";position:absolute;top:-8px;left:0;width:14px;height:14px;border-radius:50%;background:var(--bg);border:2px solid var(--accent)}
+.tl>div.big::before{background:var(--accent)}
+.tl b{font-family:var(--display);font-size:clamp(20px,2.2cqi,28px);display:block;color:var(--accent)}
+.tl p{font-size:clamp(13px,1.3cqi,16px);color:var(--ink);margin-top:4px}
+
+/* chiffres */
+.fig{display:flex;flex-direction:column;gap:2px}
+.fig b{font-family:var(--display);font-size:clamp(28px,4cqi,52px);line-height:1;color:var(--accent);font-weight:800}
+.fig span{font-size:clamp(13px,1.35cqi,17px);color:var(--muted)}
+
+/* quiz */
+details.q{border-bottom:1px solid var(--line);padding:9px 0}
+details.q summary{cursor:pointer;font-size:clamp(15px,1.6cqi,20px);list-style:none;display:flex;gap:12px}
+details.q summary::-webkit-details-marker{display:none}
+details.q summary b{font-family:var(--mono);color:var(--accent);font-size:.85em;padding-top:2px}
+details.q p{padding:6px 0 2px 34px;color:var(--accent);font-size:clamp(14px,1.5cqi,18px)}
+details.q summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* exercices */
+.exo-meta{display:flex;gap:10px;flex-wrap:wrap}
+.pill{font-family:var(--mono);font-size:12px;letter-spacing:.06em;padding:4px 10px;border-radius:99px;border:1px solid var(--line-strong);color:var(--muted)}
+.pill.a{border-color:var(--accent);color:var(--accent)}
+.pill.w{border-color:var(--warn);color:var(--warn)}
+.slide.corrige .eyebrow{color:var(--warn)}
+.slide.corrige .eyebrow .tag{border-color:var(--warn)}
+
+/* agenda */
+.agenda{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.agenda .card{gap:10px}
+.agenda .when{font-family:var(--mono);font-size:13px;color:var(--muted)}
+.agenda ul{margin:0;padding-left:18px;display:grid;gap:4px}
+.agenda li{font-size:clamp(14px,1.4cqi,17px)}
+
+/* ---------- barre d'outils ---------- */
+.bar{position:fixed;right:max(12px,env(safe-area-inset-right,0px));bottom:calc(10px + env(safe-area-inset-bottom,0px));display:flex;gap:6px;z-index:20;opacity:.35;transition:opacity .2s}
+.bar:hover,.bar:focus-within{opacity:1}
+.bar button{font:600 12px var(--mono);background:var(--surface);color:var(--ink);border:1px solid var(--line-strong);border-radius:4px;padding:6px 10px;cursor:pointer}
+.bar button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.bar button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.progress{position:fixed;left:0;top:0;height:3px;background:var(--accent);z-index:20;transition:width .25s}
+
+.panel{position:fixed;z-index:30;background:var(--surface);color:var(--ink);border:1px solid var(--line-strong);border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.25)}
+.toc{inset:24px auto 24px 24px;width:min(420px,calc(100vw - 48px));overflow:auto;padding:18px 20px}
+.toc h3{font-size:18px;margin:6px 0 10px}
+.toc .part{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin:14px 0 6px}
+.toc button{display:flex;gap:10px;width:100%;text-align:left;background:none;border:0;color:var(--ink);font:14px var(--body);padding:5px 6px;border-radius:4px;cursor:pointer}
+.toc button span{font-family:var(--mono);color:var(--muted);min-width:28px;font-size:12px;padding-top:2px}
+.toc button:hover,.toc button:focus-visible{background:var(--accent-soft)}
+.toc button.cur{background:var(--accent-soft);font-weight:700}
+.notes{left:50%;transform:translateX(-50%);bottom:56px;width:min(900px,calc(100vw - 32px));max-height:40vh;overflow:auto;padding:14px 20px;font-size:15px;line-height:1.5}
+.notes b{font-family:var(--mono);font-size:12px;letter-spacing:.1em;color:var(--accent);text-transform:uppercase;display:block;margin-bottom:4px}
+aside.n{display:none}
+.help{position:fixed;left:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));font:12px var(--mono);color:var(--muted);z-index:19;opacity:.6}
+
+@media (min-width:800px) and (max-width:1100px){
+  .foot{right:760px;justify-content:flex-end}
+  .foot>span:first-child{display:none}
+}
+
+/* ---------- lecture empilée (téléphone) ---------- */
+body.stacked{overflow:auto}
+body.stacked .deck{position:static;display:block;place-items:normal;padding-inline:16px;padding-block:8px 70px}
+body.stacked .stage{width:100%;height:auto;transform:none!important}
+body.stacked .slide{position:relative;inset:auto;padding:28px 4px 44px;border-bottom:1px solid var(--line);overflow:visible;min-height:0}
+body.stacked .slide.divider{padding:40px 20px 56px;border-radius:8px;margin-block:12px}
+body.stacked .slide::after{left:4px;bottom:10px;width:112px}
+body.stacked .foot{left:124px;right:4px;bottom:14px}
+body.stacked .slide.divider::after{left:20px}
+body.stacked .slide.divider .foot{left:140px;right:20px}
+body.stacked .help,body.stacked .progress,body.stacked #bPrev,body.stacked #bNext,body.stacked #bFull{display:none}
+@container (max-width: 760px){
+  .cols,.cols.w64,.cols.w46,.cards,.cards.c2,.cards.c4,.agenda{grid-template-columns:1fr}
+  .tl{grid-template-columns:1fr 1fr;row-gap:18px}
+  .ptape span{width:44px}
+  .tape .ev{min-width:120px}
+}
+
+/* ---------- export PDF ---------- */
+@page{size:13.333333in 7.5in;margin:0}
+@media print{
+  html,body,body.stacked{width:1280px;height:auto;overflow:visible!important;background:var(--bg);print-color-adjust:exact;-webkit-print-color-adjust:exact}
+  .deck,body.stacked .deck{position:static;display:block;overflow:visible;padding:0}
+  .stage,body.stacked .stage{width:1280px;height:auto;transform:none!important}
+  .slide,body.stacked .slide{position:relative;inset:auto;display:flex!important;width:1280px;height:720px;min-height:720px;padding:48px 72px 70px;border:0;border-radius:0;overflow:hidden;break-after:page;page-break-after:always}
+  .slide[hidden]{display:flex!important}
+  .slide.corrige,body.stacked .slide.corrige{display:none!important}
+  .slide:last-of-type{break-after:auto;page-break-after:auto}
+  .foot,body.stacked .foot{left:220px;right:72px;bottom:22px;justify-content:space-between}
+  .foot>span:first-child{display:inline}
+  .slide::after,body.stacked .slide::after{left:16px;bottom:17px;width:184px}
+  .slide.divider,body.stacked .slide.divider{padding:48px 72px 70px;border-top:10px solid var(--accent);border-radius:0;margin:0}
+  .slide.divider::after,body.stacked .slide.divider::after{left:16px}
+  .slide.divider .foot,body.stacked .slide.divider .foot{left:220px;right:72px}
+  .bar,.help,.progress,.panel{display:none!important}
+}
+</style>
+<div class="progress" id="progress"></div>
+<main class="deck" id="deck"><div class="stage" id="stage">
+
+<!-- ======================================================= ACCUEIL -->
+<section class="slide title" data-part="0" data-title="Titre">
+  <div class="eyebrow"><span class="tag">Formation</span> 1,5 jour · niveau débutant</div>
+  <div class="stack" style="gap:18px">
+    <h1>Apache Kafka,<br>du capteur au flux</h1>
+    <p class="sub">Comprendre, installer et programmer une plateforme de streaming d'événements</p>
+  </div>
+  <div class="tape" id="tape" aria-hidden="true"></div>
+  <aside class="n">Accueil. Tour de table rapide : qui a déjà entendu parler de Kafka ? Qui l'utilise déjà ? Qui a déjà écrit un docker-compose ? Le ruban en bas est un vrai « log » : des événements qui s'ajoutent à la fin, jamais modifiés. C'est toute l'idée de Kafka ; on y reviendra.</aside>
+</section>
+
+<section class="slide" data-part="0" data-title="Programme">
+  <div class="eyebrow"><span class="tag">Accueil</span> Le programme</div>
+  <h2>Trois demi-journées, une seule histoire</h2>
+  <div class="body">
+    <div class="agenda">
+      <div class="card"><span class="k">Partition 0</span><h3>Comprendre</h3><span class="when">Jour 1 · 9h – 12h</span>
+        <ul><li>Le problème que Kafka résout</li><li>Historique, de LinkedIn à Kafka 4</li><li>Quoi, pourquoi, quand ne pas l'utiliser</li><li>Tout le vocabulaire : topic, partition, offset, groupe…</li></ul></div>
+      <div class="card"><span class="k">Partition 1</span><h3>Construire</h3><span class="when">Jour 1 · 14h – 17h</span>
+        <ul><li>Un cluster Kafka 4 avec Docker Compose</li><li>Chaque ligne de configuration expliquée</li><li>Kafbat UI pour voir ce qui se passe</li><li>Premiers messages en CLI puis en Python</li></ul></div>
+      <div class="card"><span class="k">Partition 2</span><h3>Pratiquer</h3><span class="when">Jour 2 · 9h – 12h</span>
+        <ul><li>Cas pratique en binôme : un pipeline d'alertes</li><li>Montée en charge, rejeu, pannes</li><li>Correction collective à la fin</li></ul></div>
+    </div>
+    <p class="muted small">Pauses : 10h30 et 15h30, 15 minutes. Déjeuner 12h – 14h.</p>
+  </div>
+  <aside class="n">Insister sur le fil rouge : tout ce qu'on voit le matin sert l'après-midi, et tout sert le lendemain. Les numéros de partition en haut des cartes ne sont pas décoratifs : ils prendront leur sens à la slide sur les offsets.</aside>
+</section>
+
+<section class="slide" data-part="0" data-title="Le fil rouge : Verdalis">
+  <div class="eyebrow"><span class="tag">Fil rouge</span> Notre client fictif</div>
+  <h2>Verdalis, une coopérative maraîchère qui a trop de capteurs</h2>
+  <div class="body">
+    <div class="cols w64">
+      <div class="stack">
+        <p class="lead">Verdalis cultive tomates et salades dans 40 serres. Chaque serre embarque des capteurs de température, d'humidité et de CO₂.</p>
+        <ul class="list">
+          <li>Le chef de culture veut un <strong>tableau de bord</strong> en temps réel.</li>
+          <li>Le technicien veut une <strong>alerte</strong> quand une serre dépasse 32 °C.</li>
+          <li>L'agronome veut <strong>archiver</strong> tout l'historique.</li>
+          <li>La data scientist veut <strong>entraîner un modèle</strong> de prévision de récolte.</li>
+        </ul>
+      </div>
+      <div class="cards c2" style="grid-template-columns:1fr 1fr">
+        <div class="fig"><b>40</b><span>serres</span></div>
+        <div class="fig"><b>1 000</b><span>capteurs au total</span></div>
+        <div class="fig"><b>1 / s</b><span>une mesure par capteur</span></div>
+        <div class="fig"><b>86 M</b><span>mesures par jour</span></div>
+      </div>
+    </div>
+    <div class="key" data-k="Le fil conducteur"><p>À chaque notion, on se demandera : <strong>qu'est-ce que ça change pour Verdalis ?</strong> Demain, vous construirez vous-mêmes une partie de leur plateforme.</p></div>
+  </div>
+  <aside class="n">1 000 capteurs × 86 400 secondes = 86,4 millions de mesures par jour. Chiffre volontairement réaliste : c'est petit pour Kafka, mais déjà trop pour des scripts qui s'appellent les uns les autres. Verdalis est une entreprise fictive.</aside>
+</section>
+
+<section class="slide" data-part="0" data-title="Objectifs">
+  <div class="eyebrow"><span class="tag">Accueil</span> Objectifs</div>
+  <h2>À la fin de la formation, vous saurez…</h2>
+  <div class="body">
+    <div class="cards c2">
+      <div class="card"><span class="k">Expliquer</span><h3>Ce qu'est Kafka et quand l'utiliser</h3><p>Et surtout quand ne pas l'utiliser.</p></div>
+      <div class="card"><span class="k">Nommer</span><h3>Chaque brique du vocabulaire</h3><p>Broker, topic, partition, offset, réplique, ISR, groupe, commit, KRaft.</p></div>
+      <div class="card"><span class="k">Installer</span><h3>Un cluster de 3 nœuds avec Docker Compose</h3><p>En comprenant chaque variable, y compris les listeners.</p></div>
+      <div class="card"><span class="k">Programmer</span><h3>Un producteur et un consommateur Python</h3><p>Avec les bons réglages de fiabilité, et le comportement face aux pannes.</p></div>
+    </div>
+  </div>
+  <aside class="n">Demander à chacun ce qu'il attend. Noter les attentes au tableau et y revenir en conclusion.</aside>
+</section>
+
+<section class="slide" data-part="0" data-title="Prérequis techniques">
+  <div class="eyebrow"><span class="tag">Accueil</span> À préparer avant l'après-midi</div>
+  <h2>Votre poste doit être prêt avant 14 h</h2>
+  <div class="body">
+    <div class="cols">
+      <ul class="list">
+        <li><strong>Docker</strong> avec Compose v2 (<code>docker compose version</code>)</li>
+        <li><strong>6 Go de RAM libres</strong> : 3 nœuds Kafka + l'interface</li>
+        <li>Ports libres : <code>8080</code>, <code>29092</code>, <code>39092</code>, <code>49092</code></li>
+        <li><strong>Python 3.10+</strong> et <code>pip install confluent-kafka</code></li>
+        <li>Un éditeur de code et un terminal</li>
+      </ul>
+      <div class="stack">
+        <div class="code"><button class="copy" type="button">Copier</button><pre><code data-lang="bash"># Télécharger les images à l'avance (le Wi-Fi de la salle vous remerciera)
+docker pull apache/kafka:4.3.1
+docker pull kafbat/kafka-ui:v1.5.0
+
+# Préparer Python
+python -m venv .venv
+source .venv/bin/activate      # Windows : .venv\Scripts\activate
+pip install confluent-kafka</code></pre></div>
+        <div class="warn"><p>Sur un réseau d'entreprise, un proxy peut bloquer Docker Hub. Testez le <code>docker pull</code> la veille.</p></div>
+      </div>
+    </div>
+  </div>
+  <aside class="n">Faire vérifier pendant la première pause. Un poste qui n'a pas les images à 14 h perd facilement 30 minutes.</aside>
+</section>
+
+<!-- ======================================================= PARTIE 1 -->
+<section class="slide divider" data-part="0" data-title="Partie 1 · Comprendre" data-section="Comprendre">
+  <div class="eyebrow"><span class="tag">Partition 0</span> Jour 1 · matin</div>
+  <h1>Comprendre</h1>
+  <p>Le problème, l'histoire, les concepts. On ne tape pas une ligne de code ce matin, mais on pose tout ce qu'il faut pour cet après-midi.</p>
+  <div class="ptape"><span class="on">P0</span><span>P1</span><span>P2</span></div>
+</section>
+
+<section class="slide" data-part="0" data-title="Le problème">
+  <div class="eyebrow"><span class="tag">Le problème</span> Verdalis, version 1</div>
+  <h2>Chaque système parle directement à chaque système</h2>
+  <div class="body">
+    <div class="dgw"><svg class="dg" viewBox="0 0 1100 385" role="img" aria-label="Intégrations point à point comparées à un journal central"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahp" d="M0,0 L10,5 L0,10 z"/></marker><marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahpa" d="M0,0 L10,5 L0,10 z"/></marker></defs><text class="lbl" x="20" y="24" text-anchor="start">AVANT · point à point</text><text class="lbl acc" x="600" y="24" text-anchor="start">APRÈS · un journal central</text><line class="ln thin" x1="170" y1="72" x2="348" y2="72"/><line class="ln thin" x1="170" y1="72" x2="348" y2="152"/><line class="ln thin" x1="170" y1="72" x2="348" y2="232"/><line class="ln thin" x1="170" y1="72" x2="348" y2="312"/><line class="ln thin" x1="170" y1="152" x2="348" y2="72"/><line class="ln thin" x1="170" y1="152" x2="348" y2="152"/><line class="ln thin" x1="170" y1="152" x2="348" y2="232"/><line class="ln thin" x1="170" y1="152" x2="348" y2="312"/><line class="ln thin" x1="170" y1="232" x2="348" y2="72"/><line class="ln thin" x1="170" y1="232" x2="348" y2="152"/><line class="ln thin" x1="170" y1="232" x2="348" y2="232"/><line class="ln thin" x1="170" y1="232" x2="348" y2="312"/><line class="ln thin" x1="170" y1="312" x2="348" y2="72"/><line class="ln thin" x1="170" y1="312" x2="348" y2="152"/><line class="ln thin" x1="170" y1="312" x2="348" y2="232"/><line class="ln thin" x1="170" y1="312" x2="348" y2="312"/><rect class="box" x="20" y="50" width="150" height="44" rx="6"/><text class="" x="95.0" y="77.0" text-anchor="middle">Capteurs serres</text><rect class="box" x="350" y="50" width="150" height="44" rx="6"/><text class="" x="425.0" y="77.0" text-anchor="middle">Dashboard</text><rect class="box" x="20" y="130" width="150" height="44" rx="6"/><text class="" x="95.0" y="157.0" text-anchor="middle">Station météo</text><rect class="box" x="350" y="130" width="150" height="44" rx="6"/><text class="" x="425.0" y="157.0" text-anchor="middle">Alertes</text><rect class="box" x="20" y="210" width="150" height="44" rx="6"/><text class="" x="95.0" y="237.0" text-anchor="middle">App mobile</text><rect class="box" x="350" y="210" width="150" height="44" rx="6"/><text class="" x="425.0" y="237.0" text-anchor="middle">Data lake</text><rect class="box" x="20" y="290" width="150" height="44" rx="6"/><text class="" x="95.0" y="317.0" text-anchor="middle">ERP</text><rect class="box" x="350" y="290" width="150" height="44" rx="6"/><text class="" x="425.0" y="317.0" text-anchor="middle">Modèle ML</text><text class="wtxt" x="260" y="372" text-anchor="middle">4 × 4 = 16 intégrations</text><rect class="acc" x="800" y="40" width="90" height="304" rx="6"/><text class="strong" x="845" y="185" text-anchor="middle">KAFKA</text><text class="small mut" x="845" y="205" text-anchor="middle">journal</text><line class="ln lnA" x1="750" y1="72" x2="798" y2="72" marker-end="url(#aha)"/><line class="ln lnA" x1="890" y1="72" x2="928" y2="72" marker-end="url(#aha)"/><rect class="box" x="600" y="50" width="150" height="44" rx="6"/><text class="" x="675.0" y="77.0" text-anchor="middle">Capteurs serres</text><rect class="box" x="930" y="50" width="150" height="44" rx="6"/><text class="" x="1005.0" y="77.0" text-anchor="middle">Dashboard</text><line class="ln lnA" x1="750" y1="152" x2="798" y2="152" marker-end="url(#aha)"/><line class="ln lnA" x1="890" y1="152" x2="928" y2="152" marker-end="url(#aha)"/><rect class="box" x="600" y="130" width="150" height="44" rx="6"/><text class="" x="675.0" y="157.0" text-anchor="middle">Station météo</text><rect class="box" x="930" y="130" width="150" height="44" rx="6"/><text class="" x="1005.0" y="157.0" text-anchor="middle">Alertes</text><line class="ln lnA" x1="750" y1="232" x2="798" y2="232" marker-end="url(#aha)"/><line class="ln lnA" x1="890" y1="232" x2="928" y2="232" marker-end="url(#aha)"/><rect class="box" x="600" y="210" width="150" height="44" rx="6"/><text class="" x="675.0" y="237.0" text-anchor="middle">App mobile</text><rect class="box" x="930" y="210" width="150" height="44" rx="6"/><text class="" x="1005.0" y="237.0" text-anchor="middle">Data lake</text><line class="ln lnA" x1="750" y1="312" x2="798" y2="312" marker-end="url(#aha)"/><line class="ln lnA" x1="890" y1="312" x2="928" y2="312" marker-end="url(#aha)"/><rect class="box" x="600" y="290" width="150" height="44" rx="6"/><text class="" x="675.0" y="317.0" text-anchor="middle">ERP</text><rect class="box" x="930" y="290" width="150" height="44" rx="6"/><text class="" x="1005.0" y="317.0" text-anchor="middle">Modèle ML</text><text class="atxt" x="845" y="372" text-anchor="middle">4 + 4 = 8 connexions</text></svg></div>
+  </div>
+  <aside class="n">Dessiner d'abord la partie gauche au tableau en ajoutant les flèches une à une. Faire remarquer que chaque nouveau consommateur oblige à modifier TOUS les producteurs. La partie droite est la promesse de Kafka.</aside>
+</section>
+
+<section class="slide" data-part="0" data-title="Ce qui casse">
+  <div class="eyebrow"><span class="tag">Le problème</span> Pourquoi le point à point casse</div>
+  <h2>Quatre douleurs que Verdalis connaît déjà</h2>
+  <div class="body">
+    <div class="cards c2">
+      <div class="card"><span class="k">Couplage</span><h3>Si le data lake tombe, les capteurs bloquent</h3><p>L'émetteur attend la réponse du récepteur. Une panne se propage à toute la chaîne.</p></div>
+      <div class="card"><span class="k">Pics de charge</span><h3>Le lundi matin, tout arrive en même temps</h3><p>Le récepteur le plus lent impose son rythme à tout le monde, ou perd des données.</p></div>
+      <div class="card"><span class="k">Pas de rejeu</span><h3>Un bug dans l'alerte ? Les mesures d'hier sont perdues</h3><p>Une fois transmise, la donnée n'existe plus nulle part. Impossible de rejouer.</p></div>
+      <div class="card"><span class="k">Explosion</span><h3>N producteurs × M consommateurs</h3><p>Chaque nouveau besoin ajoute des connexions, des formats et des scripts à maintenir.</p></div>
+    </div>
+  </div>
+  <aside class="n">Demander au groupe s'ils ont déjà vécu une de ces situations. En général, quelqu'un a une histoire de batch de nuit qui a échoué.</aside>
+</section>
+
+<section class="slide" data-part="0" data-title="L'idée : un journal central">
+  <div class="eyebrow"><span class="tag">L'idée</span> Un journal central</div>
+  <h2>Les producteurs écrivent dans un journal. Chacun le lit à son rythme.</h2>
+  <div class="body">
+    <div class="cols">
+      <ul class="list">
+        <li>On <strong>ajoute</strong> toujours à la fin. On ne modifie jamais une ligne.</li>
+        <li>Le journal <strong>conserve</strong> les événements pendant une durée choisie (7 jours par défaut).</li>
+        <li>Chaque lecteur garde <strong>son propre marque-page</strong>. Lire ne supprime rien.</li>
+        <li>Un lecteur en panne reprend là où il s'était arrêté.</li>
+        <li>Un nouveau lecteur peut relire depuis le début.</li>
+      </ul>
+      <div class="stack">
+        <div class="analogy"><p>Le <strong>journal de bord d'un navire</strong> : on y inscrit chaque événement à la suite, avec l'heure, sans jamais raturer. Le capitaine, le mécanicien et l'assureur le lisent chacun pour leurs besoins, au moment qui leur convient.</p></div>
+        <p class="muted">En anglais, ce journal s'appelle un <strong>log</strong> (commit log). Kafka est un log distribué.</p>
+      </div>
+    </div>
+  </div>
+  <aside class="n">Ne pas confondre avec les « logs applicatifs ». Ici log = structure de données : une suite ordonnée, append-only, d'enregistrements.</aside>
+</section>
+
+<section class="slide" data-part="0" data-title="Historique : LinkedIn">
+  <div class="eyebrow"><span class="tag">Historique</span> 2010, LinkedIn</div>
+  <h2>Kafka est né du même problème que Verdalis, à une autre échelle</h2>
+  <div class="body">
+    <div class="cols w64">
+      <div class="stack">
+        <p class="lead">Vers 2010, LinkedIn doit faire circuler l'activité de ses membres (vues, clics, recherches) vers des dizaines de systèmes. Les outils de messagerie de l'époque ne tiennent pas la charge.</p>
+        <p>Trois ingénieurs, <strong>Jay Kreps</strong>, <strong>Neha Narkhede</strong> et <strong>Jun Rao</strong>, construisent un log distribué pensé pour le débit et la conservation.</p>
+      </div>
+      <div class="key" data-k="Pourquoi « Kafka » ?"><p>Jay Kreps a expliqué avoir choisi le nom de l'écrivain Franz Kafka parce que c'est « un système optimisé pour l'écriture », et qu'il aimait son œuvre. Rien à voir avec le « kafkaïen ».</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="0" data-title="Historique : frise">
+  <div class="eyebrow"><span class="tag">Historique</span> 15 ans en 6 dates</div>
+  <h2>De l'outil interne au standard du streaming</h2>
+  <div class="body">
+    <div class="tl">
+      <div><b>2011</b><p>Code publié en open source, entrée à l'incubateur Apache.</p></div>
+      <div><b>2012</b><p>Projet Apache de premier niveau.</p></div>
+      <div><b>2014</b><p>Les créateurs fondent Confluent.</p></div>
+      <div><b>2015/17</b><p>Kafka Connect, Kafka Streams, exactly-once, puis version 1.0.</p></div>
+      <div class="big"><b>2022</b><p>KRaft prêt pour la production (3.3) : Kafka se passe de ZooKeeper.</p></div>
+      <div class="big"><b>2025/26</b><p>Kafka 4.0 supprime ZooKeeper. 4.2 : files d'attente (share groups). 4.3.1 en juin 2026.</p></div>
+    </div>
+    <div class="warn" style="margin-top:auto"><p>Beaucoup de tutoriels en ligne utilisent encore ZooKeeper. Ils décrivent Kafka 3.x ou antérieur. Tout ce qu'on installe ici est en <strong>KRaft</strong>, le seul mode de Kafka 4.</p></div>
+  </div>
+  <aside class="n">Le point important pour des débutants : savoir dater un tutoriel. S'il y a un conteneur zookeeper dans le docker-compose, il date d'avant 2025.</aside>
+</section>
+
+<section class="slide" data-part="0" data-title="Kafka aujourd'hui">
+  <div class="eyebrow"><span class="tag">Historique</span> Kafka aujourd'hui</div>
+  <h2>Une infrastructure devenue banale dans les grandes entreprises</h2>
+  <div class="body">
+    <div class="cards">
+      <div class="fig"><b>80 %+</b><span>des entreprises du Fortune 100 utilisent Kafka, selon le site du projet Apache</span></div>
+      <div class="fig"><b>7 000 Md</b><span>de messages par jour chez LinkedIn en 2019</span></div>
+      <div class="fig"><b>3 / an</b><span>versions majeures ou mineures visées par le projet, une tous les 4 mois</span></div>
+    </div>
+    <p class="lead" style="margin-top:12px">On le trouve dans la banque (transactions), la logistique (suivi de colis), l'industrie et l'agriculture (capteurs), le e-commerce (commandes) et partout où plusieurs systèmes doivent réagir aux mêmes événements.</p>
+  </div>
+</section>
+
+<section class="slide" data-part="0" data-title="Qu'est-ce que Kafka ?">
+  <div class="eyebrow"><span class="tag">Quoi</span> Définition</div>
+  <h2>Une plateforme distribuée de streaming d'événements</h2>
+  <div class="body">
+    <div class="cards">
+      <div class="card"><span class="k">1 · Publier et s'abonner</span><h3>Transporter</h3><p>Des producteurs écrivent des événements, des consommateurs les lisent.</p></div>
+      <div class="card"><span class="k">2 · Stocker</span><h3>Conserver</h3><p>Les événements sont écrits sur disque, répliqués, et gardés aussi longtemps que voulu.</p></div>
+      <div class="card"><span class="k">3 · Traiter</span><h3>Transformer</h3><p>Filtrer, agréger, joindre des flux au fil de l'eau (Kafka Streams, etc.).</p></div>
+    </div>
+    <div class="cols" style="margin-top:6px">
+      <p><strong>Distribuée</strong> : elle tourne sur plusieurs machines qui se partagent le travail et se remplacent en cas de panne.</p>
+      <p><strong>Streaming</strong> : les données circulent en continu, au lieu d'être traitées par gros lots la nuit.</p>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="0" data-title="Un événement">
+  <div class="eyebrow"><span class="tag">Quoi</span> L'unité de base</div>
+  <h2>Un événement : « quelque chose s'est passé »</h2>
+  <div class="body">
+    <div class="cols">
+      <div class="stack">
+        <table class="t">
+          <tr><th>Champ</th><th>Rôle</th><th>Verdalis</th></tr>
+          <tr><td>Clé</td><td>Regroupe les événements liés</td><td><code>serre-07</code></td></tr>
+          <tr><td>Valeur</td><td>Le contenu (octets, souvent du JSON)</td><td>la mesure</td></tr>
+          <tr><td>Timestamp</td><td>Quand c'est arrivé</td><td>08:14:03</td></tr>
+          <tr><td>Headers</td><td>Métadonnées optionnelles</td><td><code>source=lora</code></td></tr>
+        </table>
+        <div class="analogy"><p>Une <strong>carte postale</strong> : une adresse (la clé), un message (la valeur), un cachet de la poste (le timestamp).</p></div>
+      </div>
+      <div class="code"><pre><code data-lang="json">// clé : "serre-07"
+{
+  "serre_id": "serre-07",
+  "capteur_id": "serre-07-temperature",
+  "type": "temperature",
+  "valeur": 24.1,
+  "unite": "°C",
+  "ts": "2026-10-05T08:14:03Z"
+}</code></pre></div>
+    </div>
+  </div>
+  <aside class="n">Kafka ne regarde jamais le contenu : pour lui, clé et valeur sont des octets. Le format (JSON, Avro, Protobuf) est un contrat entre producteurs et consommateurs. On appelle aussi un événement « message » ou « record » : ce sont des synonymes.</aside>
+</section>
+
+<section class="slide" data-part="0" data-title="Kafka n'est pas une file classique">
+  <div class="eyebrow"><span class="tag">Quoi</span> Comparaison</div>
+  <h2>Kafka n'est pas une file d'attente classique</h2>
+  <div class="body">
+    <div class="cols w64">
+      <table class="t">
+        <tr><th></th><th>File classique (RabbitMQ, JMS…)</th><th>Kafka</th></tr>
+        <tr><td>Après lecture</td><td>Message supprimé</td><td>Message conservé</td></tr>
+        <tr><td>Lecteurs</td><td>Un message va à un seul lecteur</td><td>Chaque groupe lit tout</td></tr>
+        <tr><td>Relire le passé</td><td>Impossible</td><td>Oui, pendant la rétention</td></tr>
+        <tr><td>Distribution</td><td>Le broker pousse (push)</td><td>Le consommateur tire (pull)</td></tr>
+        <tr><td>Ordre</td><td>Par file</td><td>Par partition</td></tr>
+        <tr><td>Point fort</td><td>Routage fin, tâches unitaires</td><td>Débit, rejeu, lecteurs multiples</td></tr>
+      </table>
+      <div class="stack">
+        <div class="analogy"><p>La file, c'est la <strong>boîte aux lettres</strong> : on prend la lettre, elle n'y est plus. Kafka, c'est le <strong>journal quotidien</strong> : tout le monde lit le même numéro, et les archives restent consultables.</p></div>
+        <p class="small muted">Depuis Kafka 4.2, les <em>share groups</em> ajoutent aussi un mode « file d'attente ». On reste ici sur le modèle classique des groupes.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="0" data-title="Pourquoi Kafka">
+  <div class="eyebrow"><span class="tag">Pourquoi</span> Cinq bénéfices</div>
+  <h2>Ce que Kafka apporte à Verdalis</h2>
+  <div class="body">
+    <table class="t">
+      <tr><th>Bénéfice</th><th>Ce que ça veut dire</th><th>Pour Verdalis</th></tr>
+      <tr><td>Découplage</td><td>Producteurs et consommateurs ne se connaissent pas</td><td>Ajouter le modèle ML sans toucher aux capteurs</td></tr>
+      <tr><td>Débit</td><td>Écritures séquentielles sur disque, envoi par lots</td><td>86 M mesures par jour sans effort</td></tr>
+      <tr><td>Durabilité et rejeu</td><td>Les événements restent sur disque, répliqués</td><td>Corriger un bug d'alerte, puis rejouer la semaine</td></tr>
+      <tr><td>Scalabilité</td><td>On ajoute des partitions, des consommateurs, des machines</td><td>Passer de 40 à 400 serres</td></tr>
+      <tr><td>Tolérance aux pannes</td><td>Une machine tombe, une autre prend le relais</td><td>Pas de trou dans les données la nuit</td></tr>
+    </table>
+  </div>
+</section>
+
+<section class="slide" data-part="0" data-title="Cas d'usage">
+  <div class="eyebrow"><span class="tag">Pourquoi</span> Cas d'usage courants</div>
+  <h2>Six familles d'usage</h2>
+  <div class="body">
+    <div class="cards">
+      <div class="card"><span class="k">IoT</span><h3>Télémétrie</h3><p>Capteurs, véhicules, compteurs : beaucoup de petits messages en continu.</p></div>
+      <div class="card"><span class="k">Web</span><h3>Activité utilisateur</h3><p>Clics, recherches, paniers. L'usage d'origine chez LinkedIn.</p></div>
+      <div class="card"><span class="k">Intégration</span><h3>Capture de changements</h3><p>Chaque modification d'une base est publiée comme événement (CDC).</p></div>
+      <div class="card"><span class="k">Ops</span><h3>Logs et métriques</h3><p>Centraliser les journaux de milliers de serveurs avant indexation.</p></div>
+      <div class="card"><span class="k">Architecture</span><h3>Microservices événementiels</h3><p>« Commande passée » déclenche paiement, stock et e-mail sans appel direct.</p></div>
+      <div class="card"><span class="k">Data</span><h3>Pipelines de données</h3><p>Alimenter entrepôt, data lake et moteurs de recherche en temps réel.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="0" data-title="Quand ne pas utiliser Kafka">
+  <div class="eyebrow"><span class="tag">Esprit critique</span> Quand s'abstenir</div>
+  <h2>Kafka n'est pas la réponse à tout</h2>
+  <div class="body">
+    <div class="cols">
+      <table class="t">
+        <tr><th>Besoin</th><th>Plutôt…</th></tr>
+        <tr><td>Question / réponse immédiate</td><td>Un appel HTTP ou gRPC</td></tr>
+        <tr><td>Chercher « toutes les mesures de la serre 7 en mars »</td><td>Une base de données</td></tr>
+        <tr><td>Quelques centaines de messages par jour</td><td>Une file simple, ou une table</td></tr>
+        <tr><td>Envoyer des vidéos ou gros fichiers</td><td>Stockage objet + un lien dans Kafka</td></tr>
+        <tr><td>Tâches avec priorité ou délai par message</td><td>Une file de tâches (RabbitMQ, SQS…)</td></tr>
+      </table>
+      <div class="stack">
+        <div class="warn"><p>Kafka a un <strong>coût d'exploitation</strong> réel : supervision, mises à jour, sécurité, dimensionnement des disques. Pour une petite équipe, un service managé est souvent plus raisonnable.</p></div>
+        <p class="muted small">Taille maximale d'un message par défaut : environ 1 Mo. On peut l'augmenter, mais c'est presque toujours un signal de mauvaise conception.</p>
+      </div>
+    </div>
+  </div>
+  <aside class="n">Challenger le groupe : « Verdalis veut que l'appli mobile demande la température actuelle d'une serre. Kafka ? » Réponse : non pour la requête elle-même (c'est une question/réponse), oui pour alimenter la base que l'appli interroge.</aside>
+</section>
+
+<section class="slide" data-part="0" data-title="Carte des concepts">
+  <div class="eyebrow"><span class="tag">Comment</span> On ouvre le capot</div>
+  <h2>Le vocabulaire, dans l'ordre où la donnée voyage</h2>
+  <div class="body">
+    <ol class="steps">
+      <li>Un <strong>producteur</strong> envoie un événement avec une <strong>clé</strong>…</li>
+      <li>…dans un <strong>topic</strong>, découpé en <strong>partitions</strong>, hébergé par des <strong>brokers</strong> qui forment un <strong>cluster</strong>.</li>
+      <li>L'événement reçoit un numéro, son <strong>offset</strong>, et il est <strong>répliqué</strong> sur d'autres brokers.</li>
+      <li>Des <strong>consommateurs</strong>, réunis en <strong>groupes</strong>, lisent les partitions et <strong>commitent</strong> leur progression.</li>
+      <li>Des <strong>contrôleurs</strong> (KRaft) coordonnent l'ensemble.</li>
+    </ol>
+    <p class="muted">Les 20 slides suivantes détaillent chaque mot en gras, dans cet ordre.</p>
+  </div>
+</section>
+
+<section class="slide" data-part="0" data-title="Broker et cluster">
+  <div class="eyebrow"><span class="tag">Concept</span> Broker · Cluster</div>
+  <h2>Broker : un serveur Kafka. Cluster : plusieurs brokers ensemble.</h2>
+  <div class="body">
+    <div class="cols">
+      <ul class="list">
+        <li>Un <strong>broker</strong> est un processus Kafka (une JVM) qui reçoit, stocke et sert les événements.</li>
+        <li>Chaque broker a un identifiant unique : <code>node.id</code>.</li>
+        <li>Un <strong>cluster</strong> regroupe plusieurs brokers qui se répartissent les données.</li>
+        <li>Un client n'a besoin de connaître qu'<strong>un</strong> broker pour découvrir tous les autres. C'est le rôle des <strong>bootstrap servers</strong>.</li>
+      </ul>
+      <div class="stack">
+        <div class="analogy"><p>Les <strong>bureaux de poste d'une ville</strong>. Chaque bureau stocke une partie du courrier. Si vous entrez dans n'importe lequel, on vous dit où se trouve votre colis.</p></div>
+        <div class="key" data-k="Chez Verdalis"><p>3 brokers : <code>kafka-1</code>, <code>kafka-2</code>, <code>kafka-3</code>. C'est ce qu'on installe cet après-midi.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="0" data-title="Topic">
+  <div class="eyebrow"><span class="tag">Concept</span> Topic</div>
+  <h2>Topic : une catégorie nommée d'événements</h2>
+  <div class="body">
+    <div class="cols">
+      <ul class="list">
+        <li>Un topic regroupe des événements de même nature : <code>verdalis.mesures</code>, <code>verdalis.alertes</code>.</li>
+        <li>Les producteurs écrivent <strong>dans</strong> un topic, les consommateurs s'<strong>abonnent</strong> à un topic.</li>
+        <li>Un topic peut avoir zéro, un ou cent consommateurs.</li>
+        <li>Chaque topic a ses propres réglages : nombre de partitions, rétention, réplication.</li>
+      </ul>
+      <div class="stack">
+        <div class="analogy"><p>Un <strong>rayon de bibliothèque</strong> : « Romans », « Cuisine ». On range chaque livre dans le bon rayon, et chaque lecteur va au rayon qui l'intéresse.</p></div>
+        <div class="key" data-k="Bonne pratique de nommage"><p><code>domaine.entité</code> ou <code>domaine.entité.version</code>, en minuscules. Évitez de mélanger <code>.</code> et <code>_</code> : Kafka les confond dans ses métriques.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="0" data-title="Partition">
+  <div class="eyebrow"><span class="tag">Concept</span> Partition</div>
+  <h2>Partition : un morceau de topic, et un log à part entière</h2>
+  <div class="body">
+    <div class="dgw"><svg class="dg" viewBox="0 0 1100 312" role="img" aria-label="Un topic découpé en trois partitions, chacune numérotée par offsets"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahp" d="M0,0 L10,5 L0,10 z"/></marker><marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahpa" d="M0,0 L10,5 L0,10 z"/></marker></defs><text class="lbl acc" x="20" y="22" text-anchor="start">TOPIC  verdalis.mesures</text><text class="strong" x="20" y="74" text-anchor="start">Partition 0</text><rect class="cell" x="150" y="44" width="58" height="46" rx="4"/><text class="mono" x="179.0" y="73" text-anchor="middle">0</text><rect class="cell" x="212" y="44" width="58" height="46" rx="4"/><text class="mono" x="241.0" y="73" text-anchor="middle">1</text><rect class="cell" x="274" y="44" width="58" height="46" rx="4"/><text class="mono" x="303.0" y="73" text-anchor="middle">2</text><rect class="cell" x="336" y="44" width="58" height="46" rx="4"/><text class="mono" x="365.0" y="73" text-anchor="middle">3</text><rect class="cell" x="398" y="44" width="58" height="46" rx="4"/><text class="mono" x="427.0" y="73" text-anchor="middle">4</text><rect class="cell" x="460" y="44" width="58" height="46" rx="4"/><text class="mono" x="489.0" y="73" text-anchor="middle">5</text><rect class="cell" x="522" y="44" width="58" height="46" rx="4"/><text class="mono" x="551.0" y="73" text-anchor="middle">6</text><rect class="cell" x="584" y="44" width="58" height="46" rx="4"/><text class="mono" x="613.0" y="73" text-anchor="middle">7</text><rect class="cell" x="646" y="44" width="58" height="46" rx="4"/><text class="mono" x="675.0" y="73" text-anchor="middle">8</text><rect class="cellnew" x="708" y="44" width="58" height="46" rx="4"/><text class="mono acc" x="737.0" y="73" text-anchor="middle">9</text><line class="ln lnA" x1="826" y1="67" x2="772" y2="67" marker-end="url(#aha)"/><text class="small acc" x="832" y="72" text-anchor="start">nouvelle écriture</text><text class="strong" x="20" y="152" text-anchor="start">Partition 1</text><rect class="cell" x="150" y="122" width="58" height="46" rx="4"/><text class="mono" x="179.0" y="151" text-anchor="middle">0</text><rect class="cell" x="212" y="122" width="58" height="46" rx="4"/><text class="mono" x="241.0" y="151" text-anchor="middle">1</text><rect class="cell" x="274" y="122" width="58" height="46" rx="4"/><text class="mono" x="303.0" y="151" text-anchor="middle">2</text><rect class="cell" x="336" y="122" width="58" height="46" rx="4"/><text class="mono" x="365.0" y="151" text-anchor="middle">3</text><rect class="cell" x="398" y="122" width="58" height="46" rx="4"/><text class="mono" x="427.0" y="151" text-anchor="middle">4</text><rect class="cell" x="460" y="122" width="58" height="46" rx="4"/><text class="mono" x="489.0" y="151" text-anchor="middle">5</text><rect class="cellnew" x="522" y="122" width="58" height="46" rx="4"/><text class="mono acc" x="551.0" y="151" text-anchor="middle">6</text><line class="ln lnA" x1="640" y1="145" x2="586" y2="145" marker-end="url(#aha)"/><text class="small acc" x="646" y="150" text-anchor="start">nouvelle écriture</text><text class="strong" x="20" y="230" text-anchor="start">Partition 2</text><rect class="cell" x="150" y="200" width="58" height="46" rx="4"/><text class="mono" x="179.0" y="229" text-anchor="middle">0</text><rect class="cell" x="212" y="200" width="58" height="46" rx="4"/><text class="mono" x="241.0" y="229" text-anchor="middle">1</text><rect class="cell" x="274" y="200" width="58" height="46" rx="4"/><text class="mono" x="303.0" y="229" text-anchor="middle">2</text><rect class="cell" x="336" y="200" width="58" height="46" rx="4"/><text class="mono" x="365.0" y="229" text-anchor="middle">3</text><rect class="cell" x="398" y="200" width="58" height="46" rx="4"/><text class="mono" x="427.0" y="229" text-anchor="middle">4</text><rect class="cell" x="460" y="200" width="58" height="46" rx="4"/><text class="mono" x="489.0" y="229" text-anchor="middle">5</text><rect class="cell" x="522" y="200" width="58" height="46" rx="4"/><text class="mono" x="551.0" y="229" text-anchor="middle">6</text><rect class="cell" x="584" y="200" width="58" height="46" rx="4"/><text class="mono" x="613.0" y="229" text-anchor="middle">7</text><rect class="cell" x="646" y="200" width="58" height="46" rx="4"/><text class="mono" x="675.0" y="229" text-anchor="middle">8</text><rect class="cell" x="708" y="200" width="58" height="46" rx="4"/><text class="mono" x="737.0" y="229" text-anchor="middle">9</text><rect class="cell" x="770" y="200" width="58" height="46" rx="4"/><text class="mono" x="799.0" y="229" text-anchor="middle">10</text><rect class="cellnew" x="832" y="200" width="58" height="46" rx="4"/><text class="mono acc" x="861.0" y="229" text-anchor="middle">11</text><line class="ln lnA" x1="950" y1="223" x2="896" y2="223" marker-end="url(#aha)"/><text class="small acc" x="956" y="228" text-anchor="start">nouvelle écriture</text><line class="ln" x1="150" y1="282" x2="1000" y2="282" marker-end="url(#ah)"/><text class="small mut" x="150" y="302" text-anchor="start">ancien</text><text class="small mut" x="1000" y="302" text-anchor="end">récent  (on n&#x27;écrit qu&#x27;à la fin)</text></svg></div>
+    <div class="cols">
+      <p>Un topic est découpé en <strong>partitions</strong>. Chacune est un log indépendant, stocké sur un broker. C'est l'unité de <strong>parallélisme</strong> de Kafka.</p>
+      <div class="analogy"><p>Les <strong>caisses d'un supermarché</strong> : plus il y a de caisses ouvertes, plus on sert de clients en même temps. Dans chaque file, l'ordre d'arrivée est respecté.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="0" data-title="Offset">
+  <div class="eyebrow"><span class="tag">Concept</span> Offset</div>
+  <h2>Offset : la position d'un événement dans sa partition</h2>
+  <div class="body">
+    <div class="cols">
+      <ul class="list">
+        <li>Un entier qui commence à 0 et augmente de 1 à chaque écriture.</li>
+        <li>Unique <strong>dans une partition</strong> : l'offset 5 existe dans P0, P1 et P2.</li>
+        <li>Adresse complète d'un événement : <code>topic + partition + offset</code>.</li>
+        <li>Un offset n'est jamais réutilisé, même quand les anciens messages sont supprimés.</li>
+      </ul>
+      <div class="stack">
+        <div class="analogy"><p>Le <strong>numéro de page</strong> d'un livre. Pour reprendre votre lecture, vous notez la page, pas le contenu.</p></div>
+        <div class="key" data-k="Regardez en bas à droite"><p>Cette présentation est un log. Chaque partie est une partition (<code>p0</code>, <code>p1</code>, <code>p2</code>), chaque slide a un offset qui repart à 0 dans chaque partie.</p></div>
+      </div>
+    </div>
+  </div>
+  <aside class="n">Faire le lien avec le pied de page : « nous sommes à l'offset N de la partition 0 ». Cet après-midi on sera dans la partition 1, et l'offset repartira à 0.</aside>
+</section>
+
+<section class="slide" data-part="0" data-title="Clé et partitionnement">
+  <div class="eyebrow"><span class="tag">Concept</span> Clé · Partitionnement</div>
+  <h2>La clé décide de la partition</h2>
+  <div class="body">
+    <div class="cols">
+      <div class="stack">
+        <div class="code"><pre><code data-lang="text">partition = hash(clé) % nombre_de_partitions
+
+hash("serre-07") % 6  →  2   (toujours)
+hash("serre-12") % 6  →  5   (toujours)
+hash("serre-31") % 6  →  2   (même partition que serre-07)</code></pre></div>
+        <ul class="list">
+          <li>Même clé ⇒ même partition ⇒ <strong>ordre garanti</strong> pour cette clé.</li>
+          <li>Sans clé : les messages sont répartis par lots entre les partitions (sticky partitioner).</li>
+        </ul>
+      </div>
+      <div class="stack">
+        <div class="analogy"><p>Le <strong>vestiaire d'un théâtre</strong> : la première lettre de votre nom décide du guichet. Vous retrouvez toujours votre manteau au même endroit.</p></div>
+        <div class="warn"><p>Ajouter des partitions à un topic existant change le résultat du modulo. Les nouveaux messages de <code>serre-07</code> peuvent partir ailleurs. Choisissez le nombre de partitions dès la création.</p></div>
+      </div>
+    </div>
+  </div>
+  <aside class="n">Les valeurs de partition affichées sont illustratives. Le client Java utilise murmur2, librdkafka (Python) utilise par défaut consistent_random : deux clients de langages différents ne tombent pas forcément sur la même partition pour une même clé. Si c'est important, régler partitioner=murmur2_random côté Python.</aside>
+</section>
+
+<section class="slide" data-part="0" data-title="L'ordre des messages">
+  <div class="eyebrow"><span class="tag">Concept</span> Ordre</div>
+  <h2>L'ordre est garanti dans une partition, pas dans un topic</h2>
+  <div class="body">
+    <div class="cols">
+      <div class="stack">
+        <p class="lead">Le capteur de la serre 7 envoie 18 °C, puis 25 °C, puis 33 °C.</p>
+        <ul class="list">
+          <li>Avec la clé <code>serre-07</code> : les trois mesures vont dans la même partition. Tout consommateur les lit dans cet ordre.</li>
+          <li>Sans clé : elles peuvent tomber dans trois partitions. Le consommateur peut voir 33 °C avant 18 °C.</li>
+        </ul>
+      </div>
+      <div class="stack">
+        <div class="key" data-k="Question à se poser"><p>« Pour quel regroupement l'ordre compte-t-il ? » La réponse donne la clé. Chez Verdalis : par serre. Dans une banque : par compte. En e-commerce : par commande.</p></div>
+        <div class="warn"><p>Une clé trop concentrée (90 % des messages sur une seule clé) crée une partition « chaude » et annule le parallélisme.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="0" data-title="Rétention et segments">
+  <div class="eyebrow"><span class="tag">Concept</span> Rétention · Compaction</div>
+  <h2>Combien de temps Kafka garde-t-il les données ?</h2>
+  <div class="body">
+    <div class="cols">
+      <div class="stack">
+        <p>Chaque partition est stockée en fichiers de <strong>segments</strong> (1 Go par défaut). Kafka supprime les segments anciens entiers, jamais un message isolé.</p>
+        <table class="t">
+          <tr><th>Réglage du topic</th><th>Défaut</th><th>Effet</th></tr>
+          <tr><td><code>retention.ms</code></td><td>7 jours</td><td>Âge maximal</td></tr>
+          <tr><td><code>retention.bytes</code></td><td>illimité</td><td>Taille max par partition</td></tr>
+          <tr><td><code>cleanup.policy</code></td><td><code>delete</code></td><td>ou <code>compact</code></td></tr>
+        </table>
+      </div>
+      <div class="stack">
+        <div class="analogy"><p><code>delete</code>, c'est la <strong>vidéosurveillance</strong> qui efface les enregistrements de plus de 7 jours.<br><code>compact</code>, c'est un <strong>carnet d'adresses</strong> : on ne garde que la dernière adresse connue de chaque personne (la dernière valeur par clé).</p></div>
+        <div class="key" data-k="Chez Verdalis"><p><code>verdalis.mesures</code> : 7 jours, suppression. Un topic <code>verdalis.serres.config</code> (seuils par serre) serait compacté.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="0" data-title="Réplication">
+  <div class="eyebrow"><span class="tag">Concept</span> Réplication · Leader · Follower</div>
+  <h2>Chaque partition existe en plusieurs copies</h2>
+  <div class="body">
+    <div class="dgw"><svg class="dg" viewBox="0 0 1100 312" role="img" aria-label="Trois brokers, chaque partition a un leader et deux followers"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahp" d="M0,0 L10,5 L0,10 z"/></marker><marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahpa" d="M0,0 L10,5 L0,10 z"/></marker></defs><rect class="frame" x="40" y="20" width="310" height="250" rx="8"/><text class="strong" x="60" y="50" text-anchor="start">Broker 1</text><text class="small mut" x="330" y="50" text-anchor="end">kafka-1</text><rect class="acc" x="60" y="72" width="270" height="48" rx="6"/><text class="strong" x="195.0" y="101.0" text-anchor="middle">P0 · leader</text><rect class="box" x="60" y="134" width="270" height="48" rx="6"/><text class="mut" x="195.0" y="163.0" text-anchor="middle">P1 · follower</text><rect class="box" x="60" y="196" width="270" height="48" rx="6"/><text class="mut" x="195.0" y="225.0" text-anchor="middle">P2 · follower</text><rect class="frame" x="400" y="20" width="310" height="250" rx="8"/><text class="strong" x="420" y="50" text-anchor="start">Broker 2</text><text class="small mut" x="690" y="50" text-anchor="end">kafka-2</text><rect class="box" x="420" y="72" width="270" height="48" rx="6"/><text class="mut" x="555.0" y="101.0" text-anchor="middle">P0 · follower</text><rect class="acc" x="420" y="134" width="270" height="48" rx="6"/><text class="strong" x="555.0" y="163.0" text-anchor="middle">P1 · leader</text><rect class="box" x="420" y="196" width="270" height="48" rx="6"/><text class="mut" x="555.0" y="225.0" text-anchor="middle">P2 · follower</text><rect class="frame" x="760" y="20" width="310" height="250" rx="8"/><text class="strong" x="780" y="50" text-anchor="start">Broker 3</text><text class="small mut" x="1050" y="50" text-anchor="end">kafka-3</text><rect class="box" x="780" y="72" width="270" height="48" rx="6"/><text class="mut" x="915.0" y="101.0" text-anchor="middle">P0 · follower</text><rect class="box" x="780" y="134" width="270" height="48" rx="6"/><text class="mut" x="915.0" y="163.0" text-anchor="middle">P1 · follower</text><rect class="acc" x="780" y="196" width="270" height="48" rx="6"/><text class="strong" x="915.0" y="225.0" text-anchor="middle">P2 · leader</text><text class="small mut" x="550" y="300" text-anchor="middle">Les producteurs et les consommateurs parlent au leader. Les followers recopient.</text></svg></div>
+    <div class="cols">
+      <p>Le <strong>facteur de réplication</strong> (RF) donne le nombre de copies. Avec RF = 3, on peut perdre 2 brokers sans perdre de données. Une copie est <strong>leader</strong>, les autres sont <strong>followers</strong>.</p>
+      <div class="analogy"><p>Un <strong>acte notarié</strong> : l'original chez le notaire (le leader), des copies certifiées dans deux autres études (les followers). Si l'étude brûle, une copie devient l'original.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="0" data-title="ISR et min.insync.replicas">
+  <div class="eyebrow"><span class="tag">Concept</span> ISR · min.insync.replicas</div>
+  <h2>Les répliques « à jour » : l'ISR</h2>
+  <div class="body">
+    <div class="cols">
+      <ul class="list">
+        <li><strong>ISR</strong> (In-Sync Replicas) : l'ensemble des copies qui ont bien suivi le leader. Le leader en fait partie.</li>
+        <li>Un follower trop en retard (30 s par défaut) ou arrêté <strong>sort</strong> de l'ISR. Il y revient une fois rattrapé.</li>
+        <li>Si le leader tombe, le nouveau leader est choisi <strong>dans l'ISR</strong>. Aucune donnée confirmée n'est perdue.</li>
+        <li><code>min.insync.replicas</code> : nombre minimal de copies à jour pour accepter une écriture sûre.</li>
+      </ul>
+      <div class="stack">
+        <table class="t">
+          <tr><th>RF = 3, min ISR = 2</th><th>Écriture sûre ?</th></tr>
+          <tr><td>3 brokers en ligne</td><td>Oui</td></tr>
+          <tr><td>1 broker en panne</td><td>Oui</td></tr>
+          <tr><td>2 brokers en panne</td><td>Non : Kafka refuse</td></tr>
+        </table>
+        <div class="key" data-k="La règle à retenir"><p>RF = 3 et <code>min.insync.replicas</code> = 2. C'est la configuration de production la plus courante, et celle de notre cluster.</p></div>
+      </div>
+    </div>
+  </div>
+  <aside class="n">Kafka préfère refuser une écriture plutôt que de la confirmer sans garantie. On le vérifiera en direct cet après-midi en arrêtant deux brokers.</aside>
+</section>
+
+<section class="slide" data-part="0" data-title="Producteur">
+  <div class="eyebrow"><span class="tag">Concept</span> Producteur</div>
+  <h2>Le producteur : il envoie, mais par lots</h2>
+  <div class="body">
+    <div class="cols">
+      <ul class="list">
+        <li>Il choisit la partition (via la clé), puis envoie au <strong>leader</strong> de cette partition.</li>
+        <li><code>produce()</code> ne part pas tout de suite : le message va dans un tampon.</li>
+        <li>Le tampon part quand il est plein (<code>batch.size</code>) ou après un délai (<code>linger.ms</code>).</li>
+        <li>Les lots peuvent être <strong>compressés</strong> (lz4, zstd…).</li>
+        <li>En cas d'erreur temporaire, il <strong>réessaie</strong> tout seul.</li>
+      </ul>
+      <div class="stack">
+        <div class="analogy"><p>Le <strong>facteur</strong> ne fait pas un aller-retour par lettre : il remplit sa sacoche, puis part en tournée. Attendre 20 ms de plus permet de livrer 100 fois plus.</p></div>
+        <div class="warn"><p>Si le programme se termine sans <code>flush()</code>, les messages encore dans le tampon sont perdus. C'est l'erreur n° 1 des débutants.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="0" data-title="acks et idempotence">
+  <div class="eyebrow"><span class="tag">Concept</span> acks · Idempotence</div>
+  <h2><code>acks</code> : quand considère-t-on un message comme écrit ?</h2>
+  <div class="body">
+    <table class="t">
+      <tr><th>acks</th><th>Le producteur attend…</th><th>Latence</th><th>Risque de perte</th></tr>
+      <tr><td><code>0</code></td><td>Rien. Il envoie et oublie.</td><td>Minimale</td><td>Élevé</td></tr>
+      <tr><td><code>1</code></td><td>Le leader a écrit.</td><td>Faible</td><td>Si le leader meurt avant réplication</td></tr>
+      <tr class="hl"><td><code>all</code></td><td>Toutes les copies de l'ISR ont écrit.</td><td>Un peu plus</td><td>Quasi nul (avec min ISR = 2)</td></tr>
+    </table>
+    <div class="cols">
+      <div class="stack"><p><strong>Idempotence</strong> (<code>enable.idempotence=true</code>) : si le producteur réessaie un envoi déjà reçu, le broker le reconnaît et ne l'écrit pas deux fois.</p></div>
+      <div class="analogy"><p><code>acks=all</code>, c'est le <strong>recommandé avec accusé de réception</strong>. L'idempotence, c'est le numéro de suivi : La Poste sait que le deuxième envoi est un doublon.</p></div>
+    </div>
+  </div>
+  <aside class="n">Défauts : le client Java est en acks=all + idempotence depuis Kafka 3.0. Le client Python (librdkafka) est en acks=all mais idempotence désactivée par défaut : il faut l'activer explicitement.</aside>
+</section>
+
+<section class="slide" data-part="0" data-title="Consommateur">
+  <div class="eyebrow"><span class="tag">Concept</span> Consommateur</div>
+  <h2>Le consommateur : il tire les messages, à son rythme</h2>
+  <div class="body">
+    <div class="cols">
+      <div class="stack">
+        <ul class="list">
+          <li>Il <strong>demande</strong> les messages (pull) dans une boucle <code>poll()</code>.</li>
+          <li>Il lit une partition dans l'ordre, offset après offset.</li>
+          <li>Il note où il en est : le <strong>commit d'offset</strong>, stocké dans un topic interne, <code>__consumer_offsets</code>.</li>
+          <li>Au redémarrage, il reprend au dernier offset commité.</li>
+        </ul>
+        <p class="muted small">Le pull évite de noyer un consommateur lent : c'est lui qui règle la cadence.</p>
+      </div>
+      <div class="stack">
+        <div class="code"><pre><code data-lang="text">while True:
+    message = poll()        # « qu'y a-t-il de nouveau ? »
+    traiter(message)
+    commit(message)         # « j'ai fini jusque-là »</code></pre></div>
+        <div class="analogy"><p>Le <strong>marque-page</strong>. Chaque lecteur a le sien, et le livre ne change pas quand on le lit.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="0" data-title="Groupes de consommateurs">
+  <div class="eyebrow"><span class="tag">Concept</span> Consumer group</div>
+  <h2>Le groupe : se partager le travail, sans se gêner entre équipes</h2>
+  <div class="body">
+    <div class="dgw"><svg class="dg" viewBox="0 0 1100 350" role="img" aria-label="Deux groupes de consommateurs lisent le même topic indépendamment"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahp" d="M0,0 L10,5 L0,10 z"/></marker><marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahpa" d="M0,0 L10,5 L0,10 z"/></marker></defs><text class="lbl acc" x="40" y="22" text-anchor="start">verdalis.mesures</text><rect class="cell" x="40" y="40" width="130" height="38" rx="6"/><text class="mono" x="105.0" y="64.0" text-anchor="middle">P0</text><rect class="cell" x="40" y="90" width="130" height="38" rx="6"/><text class="mono" x="105.0" y="114.0" text-anchor="middle">P1</text><rect class="cell" x="40" y="140" width="130" height="38" rx="6"/><text class="mono" x="105.0" y="164.0" text-anchor="middle">P2</text><rect class="cell" x="40" y="190" width="130" height="38" rx="6"/><text class="mono" x="105.0" y="214.0" text-anchor="middle">P3</text><rect class="cell" x="40" y="240" width="130" height="38" rx="6"/><text class="mono" x="105.0" y="264.0" text-anchor="middle">P4</text><rect class="cell" x="40" y="290" width="130" height="38" rx="6"/><text class="mono" x="105.0" y="314.0" text-anchor="middle">P5</text><rect class="frame" x="600" y="10" width="460" height="206" rx="8"/><text class="strong" x="620" y="36" text-anchor="start">groupe  verdalis-alerting</text><rect class="acc" x="640" y="52" width="380" height="44" rx="6"/><text class="strong" x="830.0" y="79.0" text-anchor="middle">instance 1  ·  P0, P1</text><rect class="acc" x="640" y="108" width="380" height="44" rx="6"/><text class="strong" x="830.0" y="135.0" text-anchor="middle">instance 2  ·  P2, P3</text><rect class="acc" x="640" y="164" width="380" height="44" rx="6"/><text class="strong" x="830.0" y="191.0" text-anchor="middle">instance 3  ·  P4, P5</text><path class="ln lnA" d="M172,59 C 420,59 420,74 638,74" marker-end="url(#aha)"/><path class="ln lnA" d="M172,109 C 420,109 420,74 638,74" marker-end="url(#aha)"/><path class="ln lnA" d="M172,159 C 420,159 420,130 638,130" marker-end="url(#aha)"/><path class="ln lnA" d="M172,209 C 420,209 420,130 638,130" marker-end="url(#aha)"/><path class="ln lnA" d="M172,259 C 420,259 420,186 638,186" marker-end="url(#aha)"/><path class="ln lnA" d="M172,309 C 420,309 420,186 638,186" marker-end="url(#aha)"/><rect class="frame" x="600" y="240" width="460" height="100" rx="8"/><text class="strong" x="620" y="266" text-anchor="start">groupe  verdalis-archivage</text><rect class="box" x="640" y="280" width="380" height="44" rx="6"/><text class="strong" x="830.0" y="307.0" text-anchor="middle">instance 1  ·  P0 à P5</text><path class="ln dash" d="M172,59 C 440,59 440,302 638,302" marker-end="url(#ah)"/><path class="ln dash" d="M172,109 C 440,109 440,302 638,302" marker-end="url(#ah)"/><path class="ln dash" d="M172,159 C 440,159 440,302 638,302" marker-end="url(#ah)"/><path class="ln dash" d="M172,209 C 440,209 440,302 638,302" marker-end="url(#ah)"/><path class="ln dash" d="M172,259 C 440,259 440,302 638,302" marker-end="url(#ah)"/><path class="ln dash" d="M172,309 C 440,309 440,302 638,302" marker-end="url(#ah)"/></svg></div>
+    <div class="cols">
+      <p><strong>Dans un groupe</strong>, chaque partition est lue par <strong>un seul</strong> membre. <strong>Entre groupes</strong>, chacun lit tout, avec ses propres offsets.</p>
+      <div class="warn"><p>6 partitions ⇒ 6 consommateurs actifs au maximum dans un groupe. Le 7<sup>e</sup> reste inactif. Le nombre de partitions plafonne le parallélisme.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="0" data-title="Rééquilibrage">
+  <div class="eyebrow"><span class="tag">Concept</span> Rebalance</div>
+  <h2>Quand un membre arrive ou part, on redistribue</h2>
+  <div class="body">
+    <div class="cols">
+      <ul class="list">
+        <li>Un <strong>coordinateur</strong> (un broker) suit les membres de chaque groupe grâce à des battements de cœur.</li>
+        <li>Un membre rejoint, quitte ou ne répond plus : le coordinateur <strong>réattribue</strong> les partitions.</li>
+        <li>Pendant l'ancien protocole, tout le groupe s'arrêtait brièvement (« stop the world »).</li>
+        <li>Kafka 4.0 généralise un nouveau protocole (KIP-848) : seules les partitions concernées bougent.</li>
+      </ul>
+      <div class="analogy"><p>Un <strong>restaurant</strong> : chaque serveur a ses tables. Un serveur part en pause, le maître d'hôtel répartit ses tables entre les autres. Un nouveau arrive, il récupère quelques tables.</p></div>
+    </div>
+  </div>
+  <aside class="n">Demain, exercice 4 : ils lanceront 1, puis 3, puis 7 instances et verront les rebalances dans les logs et dans Kafbat UI.</aside>
+</section>
+
+<section class="slide" data-part="0" data-title="Sémantiques de livraison">
+  <div class="eyebrow"><span class="tag">Concept</span> Garanties de livraison</div>
+  <h2>At-most-once, at-least-once, exactly-once</h2>
+  <div class="body">
+    <table class="t">
+      <tr><th>Garantie</th><th>Ordre des opérations</th><th>En cas de crash</th><th>Usage</th></tr>
+      <tr><td>Au plus une fois</td><td>commit, <em>puis</em> traitement</td><td>Message perdu</td><td>Métriques non critiques</td></tr>
+      <tr class="hl"><td>Au moins une fois</td><td>traitement, <em>puis</em> commit</td><td>Message traité deux fois</td><td>Le cas par défaut</td></tr>
+      <tr><td>Exactement une fois</td><td>transactions Kafka</td><td>Ni perte ni doublon</td><td>Kafka → Kafka (Streams)</td></tr>
+    </table>
+    <div class="cols">
+      <div class="key" data-k="En pratique"><p>On vise « au moins une fois », et on rend le traitement <strong>idempotent</strong> : traiter deux fois la même mesure ne doit pas créer deux alertes différentes, ou alors ce n'est pas grave.</p></div>
+      <div class="analogy"><p>Payer au restaurant : mieux vaut que le serveur vérifie deux fois votre paiement (doublon détecté) que de l'oublier.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="0" data-title="KRaft et ZooKeeper">
+  <div class="eyebrow"><span class="tag">Concept</span> Contrôleurs · KRaft</div>
+  <h2>Qui coordonne le cluster ? Hier ZooKeeper, aujourd'hui KRaft</h2>
+  <div class="body">
+    <div class="dgw"><svg class="dg" viewBox="0 0 1100 310" role="img" aria-label="Architecture ZooKeeper comparée à KRaft"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahp" d="M0,0 L10,5 L0,10 z"/></marker><marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahpa" d="M0,0 L10,5 L0,10 z"/></marker></defs><text class="lbl" x="20" y="24" text-anchor="start">HIER · Kafka + ZooKeeper</text><text class="lbl acc" x="590" y="24" text-anchor="start">AUJOURD&#x27;HUI · KRaft (Kafka 4.x)</text><rect class="frame dash" x="20" y="44" width="480" height="96" rx="8"/><text class="small mut" x="40" y="66" text-anchor="start">cluster ZooKeeper (autre logiciel)</text><circle class="box" cx="120" cy="104" r="24"/><text class="mono" x="120" y="109" text-anchor="middle">ZK</text><circle class="box" cx="260" cy="104" r="24"/><text class="mono" x="260" y="109" text-anchor="middle">ZK</text><circle class="box" cx="400" cy="104" r="24"/><text class="mono" x="400" y="109" text-anchor="middle">ZK</text><rect class="box" x="40" y="200" width="140" height="56" rx="6"/><text class="" x="110.0" y="233.0" text-anchor="middle">broker 1</text><line class="ln thin" x1="110" y1="198" x2="260" y2="142"/><rect class="box" x="200" y="200" width="140" height="56" rx="6"/><text class="" x="270.0" y="233.0" text-anchor="middle">broker 2</text><line class="ln thin" x1="270" y1="198" x2="260" y2="142"/><rect class="box" x="360" y="200" width="140" height="56" rx="6"/><text class="" x="430.0" y="233.0" text-anchor="middle">broker 3</text><line class="ln thin" x1="430" y1="198" x2="260" y2="142"/><text class="wtxt" x="260" y="296" text-anchor="middle">2 systèmes à installer, sécuriser, surveiller</text><rect class="frame" x="590" y="44" width="490" height="226" rx="8"/><text class="small acc" x="610" y="66" text-anchor="start">un seul logiciel : Kafka</text><rect class="acc" x="610" y="80" width="136" height="52" rx="6"/><text class="" x="678.0" y="103.0" text-anchor="middle">contrôleur 1</text><text class="small mut" x="678.0" y="121.0" text-anchor="middle">quorum Raft</text><rect class="acc" x="766" y="80" width="136" height="52" rx="6"/><text class="" x="834.0" y="103.0" text-anchor="middle">contrôleur 2</text><text class="small mut" x="834.0" y="121.0" text-anchor="middle">quorum Raft</text><rect class="acc" x="922" y="80" width="136" height="52" rx="6"/><text class="" x="990.0" y="103.0" text-anchor="middle">contrôleur 3</text><text class="small mut" x="990.0" y="121.0" text-anchor="middle">quorum Raft</text><rect class="box" x="610" y="196" width="136" height="56" rx="6"/><text class="" x="678.0" y="229.0" text-anchor="middle">broker 1</text><line class="ln lnA thin" x1="678" y1="194" x2="678" y2="134"/><rect class="box" x="766" y="196" width="136" height="56" rx="6"/><text class="" x="834.0" y="229.0" text-anchor="middle">broker 2</text><line class="ln lnA thin" x1="834" y1="194" x2="834" y2="134"/><rect class="box" x="922" y="196" width="136" height="56" rx="6"/><text class="" x="990.0" y="229.0" text-anchor="middle">broker 3</text><line class="ln lnA thin" x1="990" y1="194" x2="990" y2="134"/><text class="atxt" x="835" y="296" text-anchor="middle">métadonnées stockées dans un log Kafka interne</text></svg></div>
+    <div class="cols">
+      <p>Les <strong>contrôleurs</strong> gèrent les métadonnées : quels topics existent, qui est leader de quelle partition, quels brokers sont vivants. Ils s'accordent par vote (protocole <strong>Raft</strong>).</p>
+      <div class="key" data-k="Majorité"><p>3 contrôleurs tolèrent 1 panne, 5 en tolèrent 2. Il faut toujours une majorité : <code>(n / 2) + 1</code>.</p></div>
+    </div>
+  </div>
+  <aside class="n">Un nœud peut être broker, contrôleur, ou les deux (mode combiné). Le mode combiné est parfait en développement et c'est ce qu'on utilise. En production, on sépare les contrôleurs sur des machines dédiées.</aside>
+</section>
+
+<section class="slide" data-part="0" data-title="L'écosystème">
+  <div class="eyebrow"><span class="tag">Écosystème</span> Autour de Kafka</div>
+  <h2>Ce qui gravite autour du cœur</h2>
+  <div class="body">
+    <div class="cards">
+      <div class="card"><span class="k">Apache</span><h3>Kafka Connect</h3><p>Brancher bases, fichiers, S3, Elasticsearch sans écrire de code, via des connecteurs.</p></div>
+      <div class="card"><span class="k">Apache</span><h3>Kafka Streams</h3><p>Bibliothèque Java pour filtrer, agréger et joindre des flux.</p></div>
+      <div class="card"><span class="k">Clients</span><h3>Java, librdkafka</h3><p>Le client Java est officiel. librdkafka (C) sert de base aux clients Python, Go, .NET.</p></div>
+      <div class="card"><span class="k">Confluent · autres</span><h3>Schema Registry</h3><p>Gérer et faire évoluer les formats de messages (Avro, Protobuf, JSON Schema).</p></div>
+      <div class="card"><span class="k">Confluent</span><h3>ksqlDB · Flink</h3><p>Traiter des flux en SQL. Apache Flink est très utilisé avec Kafka.</p></div>
+      <div class="card"><span class="k">Open source</span><h3>Kafbat UI</h3><p>Interface web pour explorer un cluster. On l'installe cet après-midi.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="0" data-title="Récap Verdalis">
+  <div class="eyebrow"><span class="tag">Récap</span> Tout appliqué à Verdalis</div>
+  <h2>La plateforme Verdalis, en une slide</h2>
+  <div class="body">
+    <table class="t">
+      <tr><th>Notion</th><th>Choix pour Verdalis</th><th>Pourquoi</th></tr>
+      <tr><td>Cluster</td><td>3 nœuds broker + contrôleur</td><td>Tolère la panne d'un nœud</td></tr>
+      <tr><td>Topic</td><td><code>verdalis.mesures</code>, <code>verdalis.alertes</code></td><td>Un topic par type d'événement</td></tr>
+      <tr><td>Partitions</td><td>6 pour les mesures</td><td>Jusqu'à 6 instances de traitement en parallèle</td></tr>
+      <tr><td>Clé</td><td><code>serre_id</code></td><td>L'ordre compte par serre</td></tr>
+      <tr><td>Réplication</td><td>RF 3, min ISR 2</td><td>Aucune perte si un broker tombe</td></tr>
+      <tr><td>Producteur</td><td><code>acks=all</code>, idempotent</td><td>Ni perte ni doublon à l'envoi</td></tr>
+      <tr><td>Groupes</td><td><code>alerting</code>, <code>archivage</code>, <code>dashboard</code></td><td>Chaque usage lit tout, à son rythme</td></tr>
+    </table>
+  </div>
+  <aside class="n">Garder cette slide affichée pendant la pause : c'est le cahier des charges de l'après-midi.</aside>
+</section>
+
+<section class="slide" data-part="0" data-title="Glossaire">
+  <div class="eyebrow"><span class="tag">Récap</span> Glossaire</div>
+  <h2>Le glossaire de poche</h2>
+  <div class="body">
+    <div class="cols">
+      <table class="t">
+        <tr><td>Broker</td><td>Serveur Kafka qui stocke et sert les données</td></tr>
+        <tr><td>Cluster</td><td>Ensemble de brokers qui coopèrent</td></tr>
+        <tr><td>Topic</td><td>Catégorie nommée d'événements</td></tr>
+        <tr><td>Partition</td><td>Morceau ordonné d'un topic, unité de parallélisme</td></tr>
+        <tr><td>Offset</td><td>Position d'un événement dans sa partition</td></tr>
+        <tr><td>Clé</td><td>Décide de la partition, donc de l'ordre</td></tr>
+        <tr><td>Rétention</td><td>Durée de conservation des événements</td></tr>
+      </table>
+      <table class="t">
+        <tr><td>Leader</td><td>Copie qui reçoit lectures et écritures</td></tr>
+        <tr><td>Follower</td><td>Copie qui réplique le leader</td></tr>
+        <tr><td>ISR</td><td>Copies à jour, éligibles au leadership</td></tr>
+        <tr><td>acks</td><td>Niveau de confirmation attendu par le producteur</td></tr>
+        <tr><td>Groupe</td><td>Consommateurs qui se partagent les partitions</td></tr>
+        <tr><td>Commit</td><td>Enregistrer l'offset atteint par un groupe</td></tr>
+        <tr><td>KRaft</td><td>Coordination par contrôleurs, sans ZooKeeper</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="0" data-title="Quiz de fin de matinée">
+  <div class="eyebrow"><span class="tag">Quiz</span> Cliquez sur une question pour voir la réponse</div>
+  <h2>Six questions avant le déjeuner</h2>
+  <div class="body">
+    <div>
+      <details class="q"><summary><b>Q1</b>Un consommateur lit un message. Le message est-il supprimé du topic ?</summary><p>Non. Il reste jusqu'à expiration de la rétention. Seul l'offset du groupe avance.</p></details>
+      <details class="q"><summary><b>Q2</b>Le topic a 4 partitions. On lance 6 consommateurs dans le même groupe. Combien travaillent ?</summary><p>4. Les 2 autres restent inactifs, en réserve.</p></details>
+      <details class="q"><summary><b>Q3</b>Comment garantir que les mesures d'une même serre sont lues dans l'ordre ?</summary><p>Utiliser l'identifiant de la serre comme clé : même clé, même partition, ordre garanti.</p></details>
+      <details class="q"><summary><b>Q4</b>RF = 3 et min.insync.replicas = 2. Deux brokers tombent. Un producteur en acks=all peut-il écrire ?</summary><p>Non. Une seule copie est à jour, en dessous du minimum : Kafka refuse l'écriture.</p></details>
+      <details class="q"><summary><b>Q5</b>Un tutoriel démarre un conteneur ZooKeeper. Qu'en déduisez-vous ?</summary><p>Il date d'avant Kafka 4.0. En Kafka 4, la coordination passe par KRaft.</p></details>
+      <details class="q"><summary><b>Q6</b>On commite avant de traiter, puis le programme plante. Quelle garantie a-t-on ?</summary><p>Au plus une fois : le message commité mais non traité est perdu pour ce groupe.</p></details>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="0" data-title="Fin de la partie 1">
+  <div class="eyebrow"><span class="tag">Transition</span> Cet après-midi</div>
+  <h2>Assez de théorie. Cet après-midi, on construit le cluster de Verdalis.</h2>
+  <div class="body">
+    <div class="dgw"><svg class="dg" viewBox="0 0 1100 376" role="img" aria-label="Architecture du docker compose : trois nœuds Kafka, leurs volumes et Kafbat UI"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahp" d="M0,0 L10,5 L0,10 z"/></marker><marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahpa" d="M0,0 L10,5 L0,10 z"/></marker></defs><rect class="box" x="90" y="14" width="190" height="46" rx="6"/><text class="" x="185.0" y="34.0" text-anchor="middle">Navigateur</text><text class="small mut" x="185.0" y="52.0" text-anchor="middle">http://localhost:8080</text><rect class="box" x="560" y="14" width="300" height="46" rx="6"/><text class="" x="710.0" y="34.0" text-anchor="middle">Scripts Python</text><text class="small mut" x="710.0" y="52.0" text-anchor="middle">localhost:29092 / 39092 / 49092</text><rect class="frame" x="20" y="96" width="1060" height="270" rx="10"/><text class="lbl acc" x="40" y="120" text-anchor="start">docker compose  ·  réseau par défaut du projet</text><rect class="box" x="60" y="150" width="250" height="90" rx="6"/><text class="strong" x="185.0" y="192.0" text-anchor="middle">kafka-ui</text><text class="small mut" x="185.0" y="210.0" text-anchor="middle">kafbat/kafka-ui · :8080</text><line class="ln" x1="185" y1="62" x2="185" y2="148" marker-end="url(#ah)"/><rect class="acc" x="380" y="150" width="200" height="90" rx="6"/><text class="strong" x="480.0" y="192.0" text-anchor="middle">kafka-1</text><text class="small mut" x="480.0" y="210.0" text-anchor="middle">broker + contrôleur</text><line class="ln lnA thin" x1="710" y1="62" x2="480" y2="148" marker-end="url(#aha)"/><path class="box" d="M420,280 v40 a60,10 0 0 0 120,0 v-40"/><ellipse class="box" cx="480" cy="280" rx="60" ry="10"/><text class="small mono" x="480" y="312" text-anchor="middle">kafka-1-data</text><line class="ln thin" x1="480" y1="242" x2="480" y2="268"/><rect class="acc" x="610" y="150" width="200" height="90" rx="6"/><text class="strong" x="710.0" y="192.0" text-anchor="middle">kafka-2</text><text class="small mut" x="710.0" y="210.0" text-anchor="middle">broker + contrôleur</text><line class="ln lnA thin" x1="710" y1="62" x2="710" y2="148" marker-end="url(#aha)"/><path class="box" d="M650,280 v40 a60,10 0 0 0 120,0 v-40"/><ellipse class="box" cx="710" cy="280" rx="60" ry="10"/><text class="small mono" x="710" y="312" text-anchor="middle">kafka-2-data</text><line class="ln thin" x1="710" y1="242" x2="710" y2="268"/><rect class="acc" x="840" y="150" width="200" height="90" rx="6"/><text class="strong" x="940.0" y="192.0" text-anchor="middle">kafka-3</text><text class="small mut" x="940.0" y="210.0" text-anchor="middle">broker + contrôleur</text><line class="ln lnA thin" x1="710" y1="62" x2="940" y2="148" marker-end="url(#aha)"/><path class="box" d="M880,280 v40 a60,10 0 0 0 120,0 v-40"/><ellipse class="box" cx="940" cy="280" rx="60" ry="10"/><text class="small mono" x="940" y="312" text-anchor="middle">kafka-3-data</text><line class="ln thin" x1="940" y1="242" x2="940" y2="268"/><line class="ln" x1="312" y1="195" x2="378" y2="195" marker-end="url(#ah)"/></svg></div>
+  </div>
+  <aside class="n">Rappeler les prérequis : images téléchargées, Python installé. Faire lever la main à ceux qui n'ont pas pu faire le docker pull.</aside>
+</section>
+<!-- ======================================================= PARTIE 2 -->
+<section class="slide divider" data-part="1" data-title="Partie 2 · Construire" data-section="Construire">
+  <div class="eyebrow"><span class="tag">Partition 1</span> Jour 1 · après-midi</div>
+  <h1>Construire</h1>
+  <p>Un cluster Kafka 4 de trois nœuds, une interface web, et nos premiers messages. Chaque ligne de configuration est expliquée.</p>
+  <div class="ptape"><span>P0</span><span class="on">P1</span><span>P2</span></div>
+  <aside class="n">Nouvelle partition : l'offset en bas repart à 0. Le faire remarquer, c'est une bonne révision.</aside>
+</section>
+
+<section class="slide" data-part="1" data-title="Le plan de l'après-midi">
+  <div class="eyebrow"><span class="tag">Plan</span> Trois étapes, puis on joue</div>
+  <h2>On monte le cluster par couches</h2>
+  <div class="body">
+    <div class="cols w64">
+      <ol class="steps">
+        <li><strong>Un seul nœud</strong> (14 h 00). Le minimum qui démarre, pour comprendre chaque variable.</li>
+        <li><strong>Trois nœuds</strong> (15 h 00). La vraie tolérance aux pannes, et une configuration factorisée.</li>
+        <li><strong>Kafbat UI</strong> (15 h 30). Voir les brokers, topics, messages et groupes.</li>
+        <li><strong>Premiers messages</strong> (16 h 00). En ligne de commande, puis en Python, puis on casse des choses.</li>
+      </ol>
+      <div class="key" data-k="Méthode"><p>Le formateur tape, vous tapez en même temps. Un fichier qui ne démarre pas chez vous = on s'arrête et on regarde ensemble. Les erreurs de configuration sont le meilleur moment pour apprendre.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="1" data-title="Rappel Docker Compose">
+  <div class="eyebrow"><span class="tag">Rappel</span> Docker Compose en 4 points</div>
+  <h2>Ce dont on a besoin dans Compose</h2>
+  <div class="body">
+    <div class="cards c2">
+      <div class="card"><span class="k">services</span><h3>Un conteneur par nœud</h3><p><code>kafka-1</code>, <code>kafka-2</code>, <code>kafka-3</code>, <code>kafka-ui</code>.</p></div>
+      <div class="card"><span class="k">réseau</span><h3>DNS par nom de service</h3><p>Compose crée un réseau pour le projet. Dans ce réseau, <code>kafka-2</code> est un nom d'hôte valide. Depuis votre machine, il ne l'est pas.</p></div>
+      <div class="card"><span class="k">volumes</span><h3>Des données qui survivent</h3><p>Un volume nommé garde les données après <code>docker compose down</code>. <code>down -v</code> les supprime.</p></div>
+      <div class="card"><span class="k">healthcheck</span><h3>Attendre que ce soit prêt</h3><p><code>depends_on</code> + <code>condition: service_healthy</code> : l'UI démarre quand Kafka répond vraiment.</p></div>
+    </div>
+    <div class="warn"><p>Le point réseau est la source n° 1 des problèmes Kafka sous Docker. Retenez-le : on en reparle dans 10 minutes avec les listeners.</p></div>
+  </div>
+</section>
+
+<section class="slide" data-part="1" data-title="Choisir l'image">
+  <div class="eyebrow"><span class="tag">Images</span> Laquelle choisir ?</div>
+  <h2>Quelle image Docker pour Kafka ?</h2>
+  <div class="body">
+    <table class="t">
+      <tr><th>Image</th><th>Éditeur</th><th>Notre avis</th></tr>
+      <tr class="hl"><td><code>apache/kafka:4.3.1</code></td><td>Projet Apache (officielle)</td><td>Notre choix. Kafka pur, configuration par variables <code>KAFKA_*</code>.</td></tr>
+      <tr><td><code>apache/kafka-native</code></td><td>Projet Apache</td><td>Compilée avec GraalVM : démarre en une seconde. Réservée aux tests, pas à la production.</td></tr>
+      <tr><td><code>confluentinc/cp-kafka</code></td><td>Confluent</td><td>Très répandue dans les tutoriels. Conventions de variables proches mais pas identiques.</td></tr>
+      <tr><td><code>kafbat/kafka-ui:v1.5.0</code></td><td>Communauté Kafbat</td><td>L'interface web. Suite active du projet <code>provectus/kafka-ui</code>, qui n'est plus maintenu.</td></tr>
+    </table>
+    <div class="key" data-k="Toujours fixer la version"><p>Jamais <code>:latest</code> en formation ni en production. Une nouvelle version publiée pendant la nuit ne doit pas changer votre cluster au matin.</p></div>
+  </div>
+</section>
+
+<section class="slide" data-part="1" data-title="Étape 1 : un nœud">
+  <div class="eyebrow"><span class="tag">Étape 1</span> docker-compose.yml · un seul nœud</div>
+  <h2>Le plus petit cluster qui fonctionne</h2>
+  <div class="body">
+    <div class="cols w64" style="flex:1;min-height:0;align-items:stretch">
+      <div class="code scroll sm"><div class="fname">compose-1-noeud.yml</div><button class="copy" type="button">Copier</button><pre><code data-lang="yaml">services:
+  kafka:
+    image: apache/kafka:4.3.1
+    container_name: kafka
+    hostname: kafka
+    ports:
+      - "29092:9092"          # hôte:conteneur (listener EXTERNAL)
+    environment:
+      # --- Identité ---
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      CLUSTER_ID: "4L6g3nShT-eMCtK--X86sw"
+      # --- Réseau ---
+      KAFKA_LISTENERS: INTERNAL://:19092,EXTERNAL://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:19092,EXTERNAL://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      # --- Topics internes : 1 seul nœud =&gt; 1 seule copie ---
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # --- Stockage ---
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+
+volumes:
+  kafka-data:</code></pre></div>
+      <div class="stack">
+        <p>Un seul conteneur, qui joue à la fois <strong>broker</strong> et <strong>contrôleur</strong>.</p>
+        <p>Les variables sont groupées en quatre familles. On les prend une par une dans les slides suivantes :</p>
+        <ol class="steps">
+          <li>Identité</li><li>Réseau (listeners)</li><li>Topics internes</li><li>Stockage</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+  <aside class="n">Créer un dossier formation-kafka, y coller ce fichier sous le nom docker-compose.yml. Ne pas encore démarrer : on explique d'abord.</aside>
+</section>
+
+<section class="slide" data-part="1" data-title="Comment l'image lit la config">
+  <div class="eyebrow"><span class="tag">Étape 1</span> Des variables aux propriétés</div>
+  <h2>Chaque variable <code>KAFKA_*</code> devient une propriété Kafka</h2>
+  <div class="body">
+    <div class="cols">
+      <div class="stack">
+        <table class="t">
+          <tr><th>Dans la propriété</th><th>Dans la variable</th></tr>
+          <tr><td><code>.</code> (point)</td><td><code>_</code></td></tr>
+          <tr><td><code>_</code> (souligné)</td><td><code>__</code></td></tr>
+          <tr><td><code>-</code> (tiret)</td><td><code>___</code></td></tr>
+        </table>
+        <div class="code"><pre><code data-lang="text">KAFKA_NODE_ID              →  node.id
+KAFKA_LOG_DIRS             →  log.dirs
+KAFKA_MIN_INSYNC_REPLICAS  →  min.insync.replicas
+CLUSTER_ID                 →  (pas de préfixe, cas à part)</code></pre></div>
+      </div>
+      <div class="stack">
+        <div class="warn"><p>Dès que vous passez une variable <code>KAFKA_*</code>, l'image n'utilise plus son fichier <code>server.properties</code> par défaut. Ce sont alors les valeurs par défaut du code Kafka qui s'appliquent. Il faut donc tout déclarer, y compris les facteurs de réplication des topics internes.</p></div>
+        <p class="muted small">Sans aucune variable, l'image démarre un nœud de démonstration préconfiguré, accessible uniquement sur <code>localhost:9092</code> à l'intérieur du conteneur.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="1" data-title="Identité du nœud">
+  <div class="eyebrow"><span class="tag">Étape 1 · Famille 1</span> Identité</div>
+  <h2>Qui suis-je, quel rôle, dans quel cluster ?</h2>
+  <div class="body">
+    <div class="tw"><table class="t cfg">
+      <tr><th>Variable</th><th>Valeur</th><th>Rôle</th></tr>
+      <tr><td>KAFKA_NODE_ID</td><td><code>1</code></td><td>Identifiant unique du nœud dans le cluster. Deux nœuds avec le même id : le cluster refuse.</td></tr>
+      <tr><td>KAFKA_PROCESS_ROLES</td><td><code>broker,controller</code></td><td><code>broker</code> stocke les données, <code>controller</code> vote et gère les métadonnées. Les deux : mode combiné, idéal en développement.</td></tr>
+      <tr><td>CLUSTER_ID</td><td><code>4L6g3nSh…</code></td><td>Identifiant du cluster, écrit sur le disque au premier démarrage. Tous les nœuds doivent avoir le même.</td></tr>
+    </table></div>
+    <div class="cols">
+      <div class="code"><pre><code data-lang="bash"># Générer un identifiant de cluster
+docker run --rm apache/kafka:4.3.1 \
+  /opt/kafka/bin/kafka-storage.sh random-uuid</code></pre></div>
+      <div class="analogy"><p>Le <code>CLUSTER_ID</code>, c'est le <strong>nom de famille</strong> gravé sur la boîte aux lettres. Si un nœud arrive avec un autre nom sur un disque déjà marqué, il refuse de démarrer.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="1" data-title="Listeners : le concept">
+  <div class="eyebrow"><span class="tag">Étape 1 · Famille 2</span> Réseau · Listeners</div>
+  <h2>Les listeners : la partie qui fait perdre des heures</h2>
+  <div class="body">
+    <div class="cols">
+      <div class="stack">
+        <p>Un <strong>listener</strong> est une porte d'entrée du broker : un nom, un port, un protocole.</p>
+        <ul class="list">
+          <li><code>KAFKA_LISTENERS</code> : les portes <strong>ouvertes</strong>, là où le broker écoute.</li>
+          <li><code>KAFKA_ADVERTISED_LISTENERS</code> : les adresses <strong>annoncées</strong> aux clients, pour qu'ils le rappellent.</li>
+        </ul>
+        <p>On en déclare trois, car trois publics différents nous parlent :</p>
+        <table class="t">
+          <tr><td><code>INTERNAL</code></td><td>les autres brokers et Kafbat UI, dans Docker</td></tr>
+          <tr><td><code>EXTERNAL</code></td><td>vos scripts Python, sur votre machine</td></tr>
+          <tr><td><code>CONTROLLER</code></td><td>les votes entre contrôleurs</td></tr>
+        </table>
+      </div>
+      <div class="analogy"><p>Un <strong>immeuble de bureaux</strong>. <code>LISTENERS</code>, ce sont les portes : l'entrée principale, l'accès parking, l'entrée de service. <code>ADVERTISED</code>, c'est l'adresse imprimée sur la carte de visite. Si la carte donne une adresse que le visiteur ne peut pas atteindre, il reste dehors, même si la porte est grande ouverte.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="1" data-title="Listeners : la carte">
+  <div class="eyebrow"><span class="tag">Étape 1 · Famille 2</span> Qui passe par quelle porte</div>
+  <h2>Deux mondes : votre machine, et le réseau Docker</h2>
+  <div class="body">
+    <div class="dgw"><svg class="dg" viewBox="0 0 1100 390" role="img" aria-label="Carte des listeners : externe pour l&#x27;hôte, interne pour Docker, contrôleur pour le quorum"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahp" d="M0,0 L10,5 L0,10 z"/></marker><marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahpa" d="M0,0 L10,5 L0,10 z"/></marker></defs><rect class="frame dash" x="10" y="10" width="1080" height="370" rx="10"/><text class="lbl" x="30" y="36" text-anchor="start">VOTRE MACHINE (hôte)</text><rect class="box" x="36" y="146" width="190" height="70" rx="6"/><text class="strong" x="131.0" y="178.0" text-anchor="middle">simulateur.py</text><text class="small mut" x="131.0" y="196.0" text-anchor="middle">localhost:29092</text><rect class="frame" x="300" y="56" width="770" height="306" rx="10"/><text class="lbl acc" x="320" y="82" text-anchor="start">RÉSEAU DOCKER  (DNS : kafka-1, kafka-2, kafka-ui…)</text><rect class="acc" x="560" y="104" width="240" height="236" rx="8"/><text class="strong" x="680" y="130" text-anchor="middle">kafka-1</text><rect class="box" x="580" y="152" width="200" height="42" rx="6"/><text class="mono" x="680.0" y="178.0" text-anchor="middle">EXTERNAL :9092</text><rect class="box" x="580" y="216" width="200" height="42" rx="6"/><text class="mono" x="680.0" y="242.0" text-anchor="middle">INTERNAL :19092</text><rect class="box" x="580" y="280" width="200" height="42" rx="6"/><text class="mono" x="680.0" y="306.0" text-anchor="middle">CONTROLLER :9093</text><line class="ln lnA" x1="228" y1="173" x2="578" y2="173" marker-end="url(#aha)"/><text class="small acc" x="400" y="162" text-anchor="middle">port publié 29092 → 9092</text><rect class="box" x="330" y="212" width="170" height="60" rx="6"/><text class="strong" x="415.0" y="239.0" text-anchor="middle">kafka-ui</text><text class="small mut" x="415.0" y="257.0" text-anchor="middle">kafka-1:19092</text><line class="ln" x1="502" y1="237" x2="578" y2="237" marker-end="url(#ah)"/><rect class="box" x="900" y="190" width="150" height="120" rx="6"/><text class="strong" x="975.0" y="247.0" text-anchor="middle">kafka-2</text><text class="small mut" x="975.0" y="265.0" text-anchor="middle">mêmes portes</text><line class="ln" x1="898" y1="225" x2="782" y2="237" marker-end="url(#ah)"/><text class="small mut" x="840" y="214" text-anchor="middle">réplication</text><line class="ln dash" x1="898" y1="290" x2="782" y2="301" marker-end="url(#ah)"/><text class="small mut" x="840" y="322" text-anchor="middle">vote Raft</text></svg></div>
+  </div>
+  <aside class="n">Le point clé : « kafka-1 » n'existe pas pour votre machine, et « localhost » dans un conteneur désigne le conteneur lui-même. D'où deux adresses annoncées différentes selon qui demande.</aside>
+</section>
+
+<section class="slide" data-part="1" data-title="Le bootstrap">
+  <div class="eyebrow"><span class="tag">Étape 1 · Famille 2</span> Pourquoi l'adresse annoncée compte</div>
+  <h2>Le client se connecte deux fois</h2>
+  <div class="body">
+    <div class="dgw"><svg class="dg" viewBox="0 0 1100 290" role="img" aria-label="Le client se connecte au bootstrap, reçoit les adresses annoncées puis s&#x27;y reconnecte"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahp" d="M0,0 L10,5 L0,10 z"/></marker><marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahpa" d="M0,0 L10,5 L0,10 z"/></marker></defs><rect class="box" x="30" y="115" width="180" height="70" rx="6"/><text class="strong" x="120.0" y="155.0" text-anchor="middle">Client Python</text><rect class="acc" x="560" y="20" width="220" height="70" rx="6"/><text class="strong" x="670.0" y="52.0" text-anchor="middle">kafka-1</text><text class="small mut" x="670.0" y="70.0" text-anchor="middle">bootstrap</text><rect class="acc" x="560" y="210" width="220" height="70" rx="6"/><text class="strong" x="670.0" y="242.0" text-anchor="middle">kafka-2</text><text class="small mut" x="670.0" y="260.0" text-anchor="middle">leader de P1</text><path class="ln lnA" d="M212,130 C 400,130 380,40 558,40" marker-end="url(#aha)"/><text class="small" x="300" y="30" text-anchor="start">1. « Qui est dans le cluster ? »</text><path class="ln" d="M558,70 C 420,70 400,150 214,150" marker-end="url(#ah)"/><text class="small mut" x="340" y="142" text-anchor="start">2. adresses annoncées</text><path class="ln lnA" d="M212,170 C 400,170 380,245 558,245" marker-end="url(#aha)"/><text class="small" x="300" y="270" text-anchor="start">3. connexion à l&#x27;adresse reçue</text><text class="small mut" x="810" y="50" text-anchor="start">Réponse de kafka-1 :</text><text class="mono small" x="810" y="72" text-anchor="start">kafka-2 → localhost:39092</text><text class="small wtxt" x="810" y="236" text-anchor="start">Adresse annoncée fausse :</text><text class="small wtxt" x="810" y="256" text-anchor="start">étape 1 OK, puis timeout.</text></svg></div>
+    <div class="key" data-k="Conséquence"><p>Le client passe par le listener sur lequel il est arrivé et reçoit l'adresse annoncée <strong>pour ce listener</strong>. Arrivé par <code>EXTERNAL</code>, il reçoit <code>localhost:39092</code>. Arrivé par <code>INTERNAL</code>, il reçoit <code>kafka-2:19092</code>.</p></div>
+  </div>
+</section>
+
+<section class="slide" data-part="1" data-title="Listeners : les variables">
+  <div class="eyebrow"><span class="tag">Étape 1 · Famille 2</span> Les six variables réseau</div>
+  <h2>Les variables réseau, ligne par ligne</h2>
+  <div class="body">
+    <div class="tw"><table class="t cfg">
+      <tr><th>Variable</th><th>Valeur</th><th>Rôle</th></tr>
+      <tr><td>KAFKA_LISTENERS</td><td><code>INTERNAL://:19092</code><br><code>EXTERNAL://:9092</code><br><code>CONTROLLER://:9093</code></td><td>Ports d'écoute dans le conteneur. Hôte vide = toutes les interfaces.</td></tr>
+      <tr><td>KAFKA_ADVERTISED_LISTENERS</td><td><code>INTERNAL://kafka:19092</code><br><code>EXTERNAL://localhost:29092</code></td><td>Adresses données aux clients. Pour <code>EXTERNAL</code> : le port <strong>côté hôte</strong> (29092), pas 9092.</td></tr>
+      <tr><td>KAFKA_LISTENER_SECURITY_PROTOCOL_MAP</td><td><code>INTERNAL:PLAINTEXT,…</code></td><td>Protocole de chaque listener. <code>PLAINTEXT</code> = ni chiffrement ni authentification.</td></tr>
+      <tr><td>KAFKA_INTER_BROKER_LISTENER_NAME</td><td><code>INTERNAL</code></td><td>La porte utilisée entre brokers pour la réplication.</td></tr>
+      <tr><td>KAFKA_CONTROLLER_LISTENER_NAMES</td><td><code>CONTROLLER</code></td><td>La porte réservée aux contrôleurs. Jamais annoncée aux clients.</td></tr>
+      <tr><td>KAFKA_CONTROLLER_QUORUM_VOTERS</td><td><code>1@kafka:9093</code></td><td>Liste des votants : <code>id@hôte:port</code>. Identique sur tous les nœuds.</td></tr>
+    </table></div>
+    <div class="warn"><p><code>PLAINTEXT</code> est acceptable en formation. En production : <code>SASL_SSL</code> (chiffrement TLS + authentification).</p></div>
+  </div>
+</section>
+
+<section class="slide" data-part="1" data-title="Topics internes">
+  <div class="eyebrow"><span class="tag">Étape 1 · Famille 3</span> Topics internes</div>
+  <h2>Kafka stocke son propre état… dans des topics</h2>
+  <div class="body">
+    <div class="tw"><table class="t cfg">
+      <tr><th>Variable</th><th>1 nœud</th><th>Rôle</th></tr>
+      <tr><td>KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR</td><td><code>1</code></td><td>Copies de <code>__consumer_offsets</code>, où sont stockés les commits des groupes.</td></tr>
+      <tr><td>KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR</td><td><code>1</code></td><td>Copies de <code>__transaction_state</code> (transactions, exactly-once).</td></tr>
+      <tr><td>KAFKA_TRANSACTION_STATE_LOG_MIN_ISR</td><td><code>1</code></td><td>Répliques à jour exigées pour ce topic.</td></tr>
+      <tr><td>KAFKA_SHARE_COORDINATOR_STATE_TOPIC_…</td><td><code>1</code></td><td>Même chose pour <code>__share_group_state</code> (files d'attente, Kafka 4).</td></tr>
+      <tr><td>KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS</td><td><code>0</code></td><td>Délai avant le premier rééquilibrage d'un groupe (3 s par défaut). À 0, on voit l'effet tout de suite.</td></tr>
+    </table></div>
+    <div class="warn"><p>La valeur par défaut est 3 copies. Avec un seul broker, impossible de créer 3 copies : les consommateurs restent bloqués sans erreur claire. D'où le <code>1</code> ici, et le <code>3</code> à l'étape 2.</p></div>
+  </div>
+</section>
+
+<section class="slide" data-part="1" data-title="Stockage">
+  <div class="eyebrow"><span class="tag">Étape 1 · Famille 4</span> Stockage</div>
+  <h2>Où vont les données sur le disque ?</h2>
+  <div class="body">
+    <div class="cols">
+      <div class="stack">
+        <div class="code"><pre><code data-lang="yaml">    environment:
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+
+volumes:
+  kafka-data:</code></pre></div>
+        <p><code>log.dirs</code> est le dossier des partitions. On le fait pointer vers un <strong>volume nommé</strong> pour que les données survivent au conteneur.</p>
+      </div>
+      <div class="stack">
+        <div class="warn"><p>Sans ce réglage, Kafka écrit dans <code>/tmp/kraft-combined-logs</code>, en dehors du volume prévu par l'image. Supprimer le conteneur efface alors tous vos messages.</p></div>
+        <div class="key" data-k="Pourquoi /var/lib/kafka/data"><p>L'image crée ce dossier avec les bons droits pour son utilisateur (<code>appuser</code>). Un autre chemin monté en volume peut provoquer un « Permission denied ».</p></div>
+        <p class="small muted">Dans le volume, un dossier par partition : <code>verdalis.mesures-0</code>, <code>verdalis.mesures-1</code>…</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="1" data-title="Démarrer et vérifier">
+  <div class="eyebrow"><span class="tag">Étape 1</span> On démarre</div>
+  <h2>Démarrer, lire les logs, interroger le cluster</h2>
+  <div class="body">
+    <div class="cols w64">
+      <div class="code"><button class="copy" type="button">Copier</button><pre><code data-lang="bash">docker compose up -d
+docker compose logs -f kafka          # Ctrl+C pour sortir
+
+# Le quorum KRaft est-il formé ?
+docker exec -it kafka /opt/kafka/bin/kafka-metadata-quorum.sh \
+  --bootstrap-server kafka:19092 describe --status
+
+# Quels topics existent ?
+docker exec -it kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server kafka:19092 --list</code></pre></div>
+      <div class="stack">
+        <p>Dans les logs, cherchez :</p>
+        <p><code>Kafka Server started</code></p>
+        <p>Dans le statut du quorum :</p>
+        <p><code>LeaderId: 1</code> et <code>CurrentVoters</code> avec votre nœud.</p>
+        <div class="key" data-k="Premier réflexe"><p>Quelque chose ne va pas ? <code>docker compose logs</code> avant toute autre chose. Kafka est bavard, et l'erreur est presque toujours écrite en clair.</p></div>
+      </div>
+    </div>
+  </div>
+  <aside class="n">Les outils CLI sont dans /opt/kafka/bin. On les lance dans le conteneur, en passant par le listener INTERNAL. Une fois que tout le monde a un quorum, faire docker compose down -v : on passe à 3 nœuds sur un disque propre.</aside>
+</section>
+
+<section class="slide" data-part="1" data-title="Étape 2 : pourquoi 3 nœuds">
+  <div class="eyebrow"><span class="tag">Étape 2</span> Trois nœuds</div>
+  <h2>Pourquoi 3, et pas 2 ?</h2>
+  <div class="body">
+    <div class="cols">
+      <table class="t">
+        <tr><th>Contrôleurs</th><th>Majorité</th><th>Pannes tolérées</th></tr>
+        <tr><td>1</td><td>1</td><td>0</td></tr>
+        <tr><td>2</td><td>2</td><td>0 (pire que 1 !)</td></tr>
+        <tr class="hl"><td>3</td><td>2</td><td>1</td></tr>
+        <tr><td>5</td><td>3</td><td>2</td></tr>
+      </table>
+      <div class="stack">
+        <p>Le quorum Raft a besoin d'une <strong>majorité</strong>. Avec 2 nœuds, la panne de l'un bloque tout. Il faut donc un nombre <strong>impair</strong>.</p>
+        <p>Côté données, 3 brokers permettent RF = 3 et <code>min.insync.replicas</code> = 2.</p>
+        <div class="analogy"><p>Un <strong>jury de trois</strong> peut toujours trancher à la majorité. Un jury de deux se bloque au premier désaccord.</p></div>
+      </div>
+    </div>
+  </div>
+  <aside class="n">Faire docker compose down -v avant de remplacer le fichier : l'ancien volume porte un autre nom et ne sert plus.</aside>
+</section>
+
+<section class="slide" data-part="1" data-title="Factoriser avec des ancres YAML">
+  <div class="eyebrow"><span class="tag">Étape 2</span> Ne pas se répéter</div>
+  <h2>Une configuration commune, écrite une seule fois</h2>
+  <div class="body">
+    <div class="cols w64" style="flex:1;min-height:0;align-items:stretch">
+      <div class="code scroll sm"><div class="fname">docker-compose.yml · lignes 6-22</div><button class="copy" type="button">Copier</button><pre><code data-lang="yaml">x-kafka-env: &amp;kafka-env
+  KAFKA_PROCESS_ROLES: broker,controller
+  CLUSTER_ID: "4L6g3nShT-eMCtK--X86sw"
+  KAFKA_LISTENERS: INTERNAL://:19092,EXTERNAL://:9092,CONTROLLER://:9093
+  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+  KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+  KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+  KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:9093,2@kafka-2:9093,3@kafka-3:9093
+  KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+  KAFKA_MIN_INSYNC_REPLICAS: 2
+  KAFKA_NUM_PARTITIONS: 3
+  KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+  KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+  KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+  KAFKA_LOG_DIRS: /var/lib/kafka/data</code></pre></div>
+      <div class="stack">
+        <p><code>x-kafka-env</code> : un bloc ignoré par Compose (préfixe <code>x-</code>), qui sert de modèle.</p>
+        <p><code>&amp;kafka-env</code> pose une <strong>ancre</strong> sur ce bloc.</p>
+        <p><code>&lt;&lt;: *kafka-env</code> le <strong>fusionne</strong> dans chaque service. On n'ajoute ensuite que ce qui diffère.</p>
+        <div class="key" data-k="Vérifier le résultat"><p><code>docker compose config</code> affiche le fichier final, ancres résolues.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="1" data-title="Un nœud du cluster">
+  <div class="eyebrow"><span class="tag">Étape 2</span> Ce qui change d'un nœud à l'autre</div>
+  <h2>Chaque nœud : son id, son port, son adresse annoncée</h2>
+  <div class="body">
+    <div class="cols w46">
+      <div class="code sm"><div class="fname">docker-compose.yml · lignes 32-44</div><button class="copy" type="button">Copier</button><pre><code data-lang="yaml">  kafka-1:
+    image: apache/kafka:4.3.1
+    container_name: kafka-1
+    hostname: kafka-1
+    ports:
+      - "29092:9092"
+    environment:
+      &lt;&lt;: *kafka-env
+      KAFKA_NODE_ID: 1
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-1:19092,EXTERNAL://localhost:29092
+    volumes:
+      - kafka-1-data:/var/lib/kafka/data
+    healthcheck: *kafka-healthcheck</code></pre></div>
+      <div class="stack">
+        <table class="t">
+          <tr><th>Nœud</th><th>node.id</th><th>Port hôte</th><th>Adresse externe annoncée</th></tr>
+          <tr><td>kafka-1</td><td>1</td><td>29092</td><td><code>localhost:29092</code></td></tr>
+          <tr><td>kafka-2</td><td>2</td><td>39092</td><td><code>localhost:39092</code></td></tr>
+          <tr><td>kafka-3</td><td>3</td><td>49092</td><td><code>localhost:49092</code></td></tr>
+        </table>
+        <p>Dans le conteneur, les trois écoutent sur les mêmes ports (9092, 19092, 9093). Sur votre machine, chacun a <strong>son propre port</strong>, car deux conteneurs ne peuvent pas publier le même.</p>
+        <div class="warn"><p>Copier-coller un bloc et oublier de changer l'adresse annoncée : le client est renvoyé vers le mauvais broker. Erreur très fréquente.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="1" data-title="Réglages du cluster">
+  <div class="eyebrow"><span class="tag">Étape 2</span> Réglages de cluster</div>
+  <h2>Les nouvelles valeurs, maintenant qu'on a trois brokers</h2>
+  <div class="body">
+    <div class="tw"><table class="t cfg">
+      <tr><th>Variable</th><th>Valeur</th><th>Rôle</th></tr>
+      <tr><td>KAFKA_CONTROLLER_QUORUM_VOTERS</td><td><code>1@kafka-1:9093,2@…,3@…</code></td><td>Les trois votants, sur tous les nœuds.</td></tr>
+      <tr><td>KAFKA_DEFAULT_REPLICATION_FACTOR</td><td><code>3</code></td><td>RF par défaut d'un nouveau topic.</td></tr>
+      <tr><td>KAFKA_MIN_INSYNC_REPLICAS</td><td><code>2</code></td><td>Écriture <code>acks=all</code> acceptée si au moins 2 copies sont à jour.</td></tr>
+      <tr><td>KAFKA_NUM_PARTITIONS</td><td><code>3</code></td><td>Partitions par défaut d'un nouveau topic (défaut Kafka : 1).</td></tr>
+      <tr><td>KAFKA_AUTO_CREATE_TOPICS_ENABLE</td><td><code>"false"</code></td><td>Interdit la création automatique d'un topic à la première écriture.</td></tr>
+      <tr><td>KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR</td><td><code>3</code></td><td>Les commits des groupes survivent à la perte d'un broker.</td></tr>
+      <tr><td>KAFKA_TRANSACTION_STATE_LOG_MIN_ISR</td><td><code>2</code></td><td>Même logique que <code>min.insync.replicas</code>.</td></tr>
+    </table></div>
+    <div class="key" data-k="Pourquoi interdire la création automatique ?"><p>Une faute de frappe (<code>verdalis.mesure</code> au lieu de <code>verdalis.mesures</code>) créerait silencieusement un nouveau topic. On préfère une erreur claire.</p></div>
+  </div>
+</section>
+
+<section class="slide" data-part="1" data-title="Healthcheck">
+  <div class="eyebrow"><span class="tag">Étape 2</span> Healthcheck</div>
+  <h2>Comment Docker sait-il que Kafka est prêt ?</h2>
+  <div class="body">
+    <div class="cols">
+      <div class="code "><div class="fname">docker-compose.yml · lignes 24-29</div><button class="copy" type="button">Copier</button><pre><code data-lang="yaml">x-kafka-healthcheck: &amp;kafka-healthcheck
+  test: ["CMD-SHELL", "/opt/kafka/bin/kafka-cluster.sh cluster-id --bootstrap-server localhost:19092 &gt; /dev/null 2&gt;&amp;1"]
+  interval: 10s
+  timeout: 10s
+  retries: 12
+  start_period: 20s</code></pre></div>
+      <div class="stack">
+        <ul class="list">
+          <li>La commande demande l'identifiant du cluster au broker local. S'il répond, il est prêt.</li>
+          <li><code>start_period</code> : pendant 20 s, les échecs ne comptent pas (démarrage de la JVM).</li>
+          <li>12 essais × 10 s : au-delà de 2 minutes, le conteneur est déclaré <code>unhealthy</code>.</li>
+        </ul>
+        <div class="analogy"><p>Un conteneur « démarré » n'est pas un service « prêt ». C'est la différence entre un restaurant dont la porte est ouverte et un restaurant dont la cuisine est prête à servir.</p></div>
+      </div>
+    </div>
+    <p class="muted small">Visible avec <code>docker compose ps</code> : colonne STATUS, <code>(healthy)</code>.</p>
+  </div>
+</section>
+
+<section class="slide" data-part="1" data-title="Étape 3 : Kafbat UI">
+  <div class="eyebrow"><span class="tag">Étape 3</span> Kafbat UI</div>
+  <h2>Une interface web pour voir ce qui se passe</h2>
+  <div class="body">
+    <div class="cols">
+      <div class="code "><div class="fname">docker-compose.yml · lignes 74-89</div><button class="copy" type="button">Copier</button><pre><code data-lang="yaml">  kafka-ui:
+    image: kafbat/kafka-ui:v1.5.0
+    container_name: kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: verdalis
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:19092,kafka-2:19092,kafka-3:19092
+      DYNAMIC_CONFIG_ENABLED: "true"
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy</code></pre></div>
+      <div class="tw"><table class="t cfg">
+        <tr><th>Variable</th><th>Rôle</th></tr>
+        <tr><td>KAFKA_CLUSTERS_0_NAME</td><td>Nom affiché. Le <code>0</code> est l'index : on peut déclarer plusieurs clusters.</td></tr>
+        <tr><td>KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS</td><td>Adresses <strong>internes</strong> (<code>kafka-1:19092</code>) : l'UI est dans le réseau Docker.</td></tr>
+        <tr><td>DYNAMIC_CONFIG_ENABLED</td><td>Autorise à ajouter ou modifier des clusters depuis l'interface.</td></tr>
+        <tr><td>depends_on … healthy</td><td>L'UI attend que les 3 brokers soient prêts.</td></tr>
+      </table></div>
+    </div>
+  </div>
+  <aside class="n">Question au groupe : pourquoi pas localhost:29092 pour l'UI ? Parce que dans le conteneur kafka-ui, localhost désigne kafka-ui lui-même.</aside>
+</section>
+
+<section class="slide" data-part="1" data-title="Le fichier complet">
+  <div class="eyebrow"><span class="tag">Étapes 2 + 3</span> docker-compose.yml complet</div>
+  <h2>Le fichier complet, à copier</h2>
+  <div class="body">
+    <div class="code scroll sm"><div class="fname">docker-compose.yml</div><button class="copy" type="button">Copier</button><pre><code data-lang="yaml"># Formation Kafka — cluster Verdalis : 3 nœuds KRaft + Kafbat UI
+# Démarrer :  docker compose up -d
+# Arrêter  :  docker compose down        (garde les données)
+# Tout effacer : docker compose down -v  (supprime les volumes !)
+
+x-kafka-env: &amp;kafka-env
+  KAFKA_PROCESS_ROLES: broker,controller
+  CLUSTER_ID: "4L6g3nShT-eMCtK--X86sw"
+  KAFKA_LISTENERS: INTERNAL://:19092,EXTERNAL://:9092,CONTROLLER://:9093
+  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+  KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+  KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+  KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:9093,2@kafka-2:9093,3@kafka-3:9093
+  KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+  KAFKA_MIN_INSYNC_REPLICAS: 2
+  KAFKA_NUM_PARTITIONS: 3
+  KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+  KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+  KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+  KAFKA_LOG_DIRS: /var/lib/kafka/data
+
+x-kafka-healthcheck: &amp;kafka-healthcheck
+  test: ["CMD-SHELL", "/opt/kafka/bin/kafka-cluster.sh cluster-id --bootstrap-server localhost:19092 &gt; /dev/null 2&gt;&amp;1"]
+  interval: 10s
+  timeout: 10s
+  retries: 12
+  start_period: 20s
+
+services:
+  kafka-1:
+    image: apache/kafka:4.3.1
+    container_name: kafka-1
+    hostname: kafka-1
+    ports:
+      - "29092:9092"
+    environment:
+      &lt;&lt;: *kafka-env
+      KAFKA_NODE_ID: 1
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-1:19092,EXTERNAL://localhost:29092
+    volumes:
+      - kafka-1-data:/var/lib/kafka/data
+    healthcheck: *kafka-healthcheck
+
+  kafka-2:
+    image: apache/kafka:4.3.1
+    container_name: kafka-2
+    hostname: kafka-2
+    ports:
+      - "39092:9092"
+    environment:
+      &lt;&lt;: *kafka-env
+      KAFKA_NODE_ID: 2
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-2:19092,EXTERNAL://localhost:39092
+    volumes:
+      - kafka-2-data:/var/lib/kafka/data
+    healthcheck: *kafka-healthcheck
+
+  kafka-3:
+    image: apache/kafka:4.3.1
+    container_name: kafka-3
+    hostname: kafka-3
+    ports:
+      - "49092:9092"
+    environment:
+      &lt;&lt;: *kafka-env
+      KAFKA_NODE_ID: 3
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-3:19092,EXTERNAL://localhost:49092
+    volumes:
+      - kafka-3-data:/var/lib/kafka/data
+    healthcheck: *kafka-healthcheck
+
+  kafka-ui:
+    image: kafbat/kafka-ui:v1.5.0
+    container_name: kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: verdalis
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:19092,kafka-2:19092,kafka-3:19092
+      DYNAMIC_CONFIG_ENABLED: "true"
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+
+volumes:
+  kafka-1-data:
+  kafka-2-data:
+  kafka-3-data:</code></pre></div>
+  </div>
+  <aside class="n">Le bouton Copier récupère tout le fichier. Faire docker compose config pour vérifier la syntaxe avant de démarrer.</aside>
+</section>
+
+<section class="slide" data-part="1" data-title="Lancer le cluster">
+  <div class="eyebrow"><span class="tag">Étapes 2 + 3</span> On démarre</div>
+  <h2>Démarrer et contrôler les trois nœuds</h2>
+  <div class="body">
+    <div class="cols w64">
+      <div class="code"><button class="copy" type="button">Copier</button><pre><code data-lang="bash">docker compose down -v        # repartir d'un disque propre
+docker compose up -d
+docker compose ps             # attendre 3 × (healthy)
+
+docker exec -it kafka-1 /opt/kafka/bin/kafka-metadata-quorum.sh \
+  --bootstrap-server kafka-1:19092 describe --status
+
+# Raccourci pour la suite de l'après-midi
+alias kt='docker exec -it kafka-1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:19092'</code></pre></div>
+      <div class="stack">
+        <p>Résultat attendu du statut :</p>
+        <ul class="list">
+          <li><code>LeaderId</code> : 1, 2 ou 3</li>
+          <li><code>CurrentVoters</code> : les 3 nœuds</li>
+          <li><code>MaxFollowerLag</code> : proche de 0</li>
+        </ul>
+        <p>Puis ouvrez <strong>http://localhost:8080</strong>.</p>
+      </div>
+    </div>
+  </div>
+  <aside class="n">L'alias fonctionne en bash et zsh. Sous PowerShell, utiliser une fonction ou taper la commande complète.</aside>
+</section>
+
+<section class="slide" data-part="1" data-title="Visite de Kafbat UI">
+  <div class="eyebrow"><span class="tag">Étape 3</span> Visite guidée</div>
+  <h2>Ce qu'on regarde dans Kafbat UI</h2>
+  <div class="body">
+    <div class="cards">
+      <div class="card"><span class="k">Dashboard</span><h3>État du cluster</h3><p>En ligne ou non, nombre de brokers, partitions en sous-réplication.</p></div>
+      <div class="card"><span class="k">Brokers</span><h3>Les 3 nœuds</h3><p>Lequel est contrôleur actif, espace disque, configuration effective de chaque broker.</p></div>
+      <div class="card"><span class="k">Topics</span><h3>Créer et inspecter</h3><p>Partitions, leaders, ISR, configuration du topic. Créer un topic en 3 clics.</p></div>
+      <div class="card"><span class="k">Topics › Messages</span><h3>Lire et produire</h3><p>Parcourir par partition et offset, filtrer, et produire un message à la main.</p></div>
+      <div class="card"><span class="k">Consumers</span><h3>Groupes et lag</h3><p>Membres, partitions attribuées, retard par partition. Réinitialiser les offsets.</p></div>
+      <div class="card"><span class="k">Config</span><h3>Réglages dynamiques</h3><p>Modifier certains réglages de topic ou de broker sans redémarrer.</p></div>
+    </div>
+    <div class="key" data-k="Démo en direct"><p>Créer <code>verdalis.test</code> depuis l'UI (3 partitions, RF 3), y produire un message, le retrouver dans l'onglet Messages avec sa partition et son offset.</p></div>
+  </div>
+</section>
+
+<section class="slide" data-part="1" data-title="Créer un topic en CLI">
+  <div class="eyebrow"><span class="tag">Premiers pas</span> Topics en ligne de commande</div>
+  <h2>Créer <code>verdalis.mesures</code> et lire sa description</h2>
+  <div class="body">
+    <div class="code"><button class="copy" type="button">Copier</button><pre><code data-lang="bash">kt --create --topic verdalis.mesures --partitions 6 --replication-factor 3
+kt --describe --topic verdalis.mesures</code></pre></div>
+    <div class="code sm"><pre><code data-lang="text">Topic: verdalis.mesures  PartitionCount: 6  ReplicationFactor: 3
+  Partition: 0   Leader: 2   Replicas: 2,3,1   Isr: 2,3,1
+  Partition: 1   Leader: 3   Replicas: 3,1,2   Isr: 3,1,2
+  Partition: 2   Leader: 1   Replicas: 1,2,3   Isr: 1,2,3
+  ...                                   (sortie simplifiée)</code></pre></div>
+    <table class="t">
+      <tr><td><code>Leader</code></td><td>Le broker qui sert cette partition</td><td><code>Replicas</code></td><td>Où sont les copies ; le premier est le leader « préféré »</td></tr>
+      <tr><td><code>Isr</code></td><td>Copies à jour. Si Isr = Replicas, tout va bien</td><td>Répartition</td><td>Les leaders sont répartis sur les 3 brokers</td></tr>
+    </table>
+  </div>
+</section>
+
+<section class="slide" data-part="1" data-title="Produire et consommer en console">
+  <div class="eyebrow"><span class="tag">Premiers pas</span> Console</div>
+  <h2>Deux terminaux : l'un écrit, l'autre lit</h2>
+  <div class="body">
+    <div class="cols">
+      <div class="stack">
+        <p class="small muted">Terminal A · producteur (clé|valeur)</p>
+        <div class="code sm"><button class="copy" type="button">Copier</button><pre><code data-lang="bash">docker exec -it kafka-1 /opt/kafka/bin/kafka-console-producer.sh \
+  --bootstrap-server kafka-1:19092 --topic verdalis.mesures \
+  --reader-property parse.key=true \
+  --reader-property 'key.separator=|'
+
+&gt; serre-07|{"type":"temperature","valeur":24.1}
+&gt; serre-07|{"type":"temperature","valeur":25.3}
+&gt; serre-12|{"type":"humidite","valeur":61}</code></pre></div>
+      </div>
+      <div class="stack">
+        <p class="small muted">Terminal B · consommateur dans un groupe</p>
+        <div class="code sm"><button class="copy" type="button">Copier</button><pre><code data-lang="bash">docker exec -it kafka-1 /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server kafka-1:19092 --topic verdalis.mesures \
+  --group verdalis-console --from-beginning \
+  --formatter-property print.key=true \
+  --formatter-property print.partition=true \
+  --formatter-property print.offset=true</code></pre></div>
+        <div class="key" data-k="À observer"><p>Les deux messages de <code>serre-07</code> sont dans la même partition, avec des offsets qui se suivent.</p></div>
+      </div>
+    </div>
+    <p class="muted small">Avant Kafka 4.2, ces options s'appelaient <code>--property</code>. Vous les verrez partout dans les tutoriels ; elles marchent encore, avec un avertissement.</p>
+  </div>
+</section>
+
+<section class="slide" data-part="1" data-title="Groupes et lag">
+  <div class="eyebrow"><span class="tag">Premiers pas</span> Groupes · Lag</div>
+  <h2>Où en est chaque groupe ? Le lag</h2>
+  <div class="body">
+    <div class="code"><button class="copy" type="button">Copier</button><pre><code data-lang="bash">docker exec -it kafka-1 /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server kafka-1:19092 --describe --group verdalis-console</code></pre></div>
+    <div class="code sm"><pre><code data-lang="text">GROUP            TOPIC             PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG
+verdalis-console verdalis.mesures  2          2               2               0
+verdalis-console verdalis.mesures  5          1               3               2</code></pre></div>
+    <div class="cols">
+      <table class="t">
+        <tr><td><code>CURRENT-OFFSET</code></td><td>Prochain offset que le groupe lira (dernier commit)</td></tr>
+        <tr><td><code>LOG-END-OFFSET</code></td><td>Prochain offset qui sera écrit</td></tr>
+        <tr><td><code>LAG</code></td><td>La différence : messages en attente</td></tr>
+      </table>
+      <div class="analogy"><p>Le <strong>lag</strong>, c'est le nombre d'épisodes d'une série que vous n'avez pas encore regardés. S'il grandit sans cesse, vous n'arriverez jamais à rattraper.</p></div>
+    </div>
+  </div>
+  <aside class="n">Arrêter le consommateur console, produire quelques messages, relancer describe : le lag augmente. Relancer le consommateur sans --from-beginning : il reprend là où il s'était arrêté. C'est la démonstration du commit.</aside>
+</section>
+
+<section class="slide" data-part="1" data-title="Démo : on casse un broker">
+  <div class="eyebrow"><span class="tag">Démo</span> Tolérance aux pannes</div>
+  <h2>Arrêtons un broker, puis deux</h2>
+  <div class="body">
+    <div class="cols">
+      <div class="code sm"><button class="copy" type="button">Copier</button><pre><code data-lang="bash"># 1. Un broker tombe
+docker stop kafka-2
+kt --describe --topic verdalis.mesures
+#   Isr: 1,3 ... Leader : jamais 2
+kt --describe --under-replicated-partitions
+
+# 2. Il revient
+docker start kafka-2
+#   après quelques secondes : Isr: 2,3,1
+
+# 3. Deux brokers tombent
+docker stop kafka-2 kafka-3
+#   essayez de produire avec la console...
+
+docker start kafka-2 kafka-3</code></pre></div>
+      <div class="stack">
+        <table class="t">
+          <tr><th>Situation</th><th>Ce qu'on observe</th></tr>
+          <tr><td>1 broker arrêté</td><td>Les leaders migrent. Production et lecture continuent.</td></tr>
+          <tr><td>Retour</td><td>Il rattrape son retard et rejoint l'ISR.</td></tr>
+          <tr><td>2 brokers arrêtés</td><td>Le quorum KRaft est perdu (1 votant sur 3). Les écritures échouent ou expirent.</td></tr>
+        </table>
+        <div class="key" data-k="Le message à retenir"><p>Kafka préfère <strong>refuser</strong> une écriture plutôt que la confirmer sans garantie.</p></div>
+      </div>
+    </div>
+  </div>
+  <aside class="n">Suivre en parallèle dans Kafbat UI, onglet Brokers et Topics : les partitions passent en « under replicated ». Le comportement exact à 2 pannes (erreur NOT_ENOUGH_REPLICAS ou timeout) dépend du moment ; ce qui compte, c'est qu'aucune écriture n'est confirmée.</aside>
+</section>
+
+<section class="slide" data-part="1" data-title="Python : le producteur">
+  <div class="eyebrow"><span class="tag">Python</span> confluent-kafka · producteur</div>
+  <h2>Un producteur Python en 20 lignes</h2>
+  <div class="body">
+    <div class="cols w64" style="flex:1;min-height:0;align-items:stretch">
+      <div class="code scroll sm"><div class="fname">producer_minimal.py</div><button class="copy" type="button">Copier</button><pre><code data-lang="python">import json
+from confluent_kafka import Producer
+
+producer = Producer({
+    "bootstrap.servers": "localhost:29092,localhost:39092,localhost:49092",
+    "acks": "all",                  # attendre les répliques synchronisées
+    "enable.idempotence": True,     # pas de doublon en cas de retry
+})
+
+def rapport(err, msg):              # appelé quand le broker a répondu
+    if err:
+        print("Échec :", err)
+    else:
+        print(f"OK -&gt; partition {msg.partition()}, offset {msg.offset()}")
+
+mesure = {"serre_id": "serre-07", "type": "temperature", "valeur": 24.1}
+producer.produce("verdalis.mesures",
+                 key="serre-07",
+                 value=json.dumps(mesure),
+                 callback=rapport)
+
+producer.flush(10)                  # vider le tampon avant de quitter</code></pre></div>
+      <div class="stack">
+        <ul class="list">
+          <li><code>bootstrap.servers</code> : les ports <strong>hôte</strong>, car le script tourne sur votre machine.</li>
+          <li><code>produce()</code> est <strong>asynchrone</strong> : il remplit le tampon et rend la main.</li>
+          <li>Le <code>callback</code> dit si l'écriture a réussi. Il est appelé pendant <code>poll()</code> ou <code>flush()</code>.</li>
+          <li><code>flush()</code> attend que tout soit parti. Sans lui, messages perdus.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <aside class="n">pip install confluent-kafka. C'est un binding de librdkafka, le client C de référence : rapide et complet. L'alternative pure Python (kafka-python) est moins complète.</aside>
+</section>
+
+<section class="slide" data-part="1" data-title="Python : le consommateur">
+  <div class="eyebrow"><span class="tag">Python</span> confluent-kafka · consommateur</div>
+  <h2>Un consommateur Python : la boucle <code>poll()</code></h2>
+  <div class="body">
+    <div class="cols w64" style="flex:1;min-height:0;align-items:stretch">
+      <div class="code scroll sm"><div class="fname">consumer_minimal.py</div><button class="copy" type="button">Copier</button><pre><code data-lang="python">import json
+from confluent_kafka import Consumer
+
+consumer = Consumer({
+    "bootstrap.servers": "localhost:29092,localhost:39092,localhost:49092",
+    "group.id": "verdalis-dashboard",   # nom du groupe = identité du lecteur
+    "auto.offset.reset": "earliest",    # sans offset commité : depuis le début
+    "enable.auto.commit": False,        # on commite nous-mêmes
+})
+consumer.subscribe(["verdalis.mesures"])
+
+try:
+    while True:
+        msg = consumer.poll(1.0)          # attend au plus 1 s
+        if msg is None:
+            continue
+        if msg.error():
+            print("Erreur :", msg.error())
+            continue
+        mesure = json.loads(msg.value())
+        print(msg.key().decode(), mesure, f"p{msg.partition()}@{msg.offset()}")
+        consumer.commit(message=msg, asynchronous=False)
+finally:
+    consumer.close()                    # quitte le groupe proprement</code></pre></div>
+      <div class="stack">
+        <ul class="list">
+          <li><code>group.id</code> est obligatoire : c'est l'identité du lecteur.</li>
+          <li><code>auto.offset.reset</code> ne sert <strong>que</strong> si le groupe n'a encore rien commité.</li>
+          <li>On commite <strong>après</strong> le traitement : au moins une fois.</li>
+          <li><code>close()</code> prévient le groupe : le rééquilibrage est immédiat.</li>
+        </ul>
+        <p class="small muted">Commiter à chaque message est lent. On verra demain comment commiter par lots.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="1" data-title="Configurations client essentielles">
+  <div class="eyebrow"><span class="tag">Python</span> Aide-mémoire</div>
+  <h2>Les réglages client à connaître</h2>
+  <div class="body">
+    <div class="cols">
+      <div class="tw"><table class="t cfg">
+        <tr><th>Producteur</th><th>Conseil</th></tr>
+        <tr><td>bootstrap.servers</td><td>Au moins 2 adresses</td></tr>
+        <tr><td>acks</td><td><code>all</code></td></tr>
+        <tr><td>enable.idempotence</td><td><code>True</code> (désactivé par défaut en Python)</td></tr>
+        <tr><td>linger.ms</td><td>5 à 50 : regrouper les messages</td></tr>
+        <tr><td>compression.type</td><td><code>lz4</code> ou <code>zstd</code></td></tr>
+        <tr><td>client.id</td><td>Un nom lisible dans les logs</td></tr>
+      </table></div>
+      <div class="tw"><table class="t cfg">
+        <tr><th>Consommateur</th><th>Conseil</th></tr>
+        <tr><td>group.id</td><td>Un nom par usage : <code>verdalis-alerting</code></td></tr>
+        <tr><td>auto.offset.reset</td><td><code>earliest</code> ou <code>latest</code>, selon le besoin</td></tr>
+        <tr><td>enable.auto.commit</td><td><code>False</code> si la perte coûte cher</td></tr>
+        <tr><td>max.poll.interval.ms</td><td>Délai max entre deux <code>poll()</code> (5 min)</td></tr>
+        <tr><td>session.timeout.ms</td><td>Déclaré mort sans signe de vie (45 s)</td></tr>
+      </table></div>
+    </div>
+    <div class="warn"><p>Un traitement qui prend plus de 5 minutes entre deux <code>poll()</code> fait exclure le consommateur du groupe, puis déclenche un rééquilibrage en boucle.</p></div>
+  </div>
+</section>
+
+<section class="slide" data-part="1" data-title="Pièges fréquents">
+  <div class="eyebrow"><span class="tag">Dépannage</span> Symptôme → cause</div>
+  <h2>Les erreurs que vous allez rencontrer</h2>
+  <div class="body">
+    <table class="t">
+      <tr><th>Symptôme</th><th>Cause probable</th><th>Remède</th></tr>
+      <tr><td>Le script se connecte puis expire</td><td>Adresse annoncée injoignable</td><td>Vérifier <code>ADVERTISED_LISTENERS</code> et les ports publiés</td></tr>
+      <tr><td><code>port is already allocated</code></td><td>Port pris par un autre programme</td><td>Changer le port hôte <strong>et</strong> l'adresse annoncée</td></tr>
+      <tr><td><code>Invalid cluster.id</code> au démarrage</td><td><code>CLUSTER_ID</code> changé, ancien volume</td><td><code>docker compose down -v</code></td></tr>
+      <tr><td><code>Replication factor … larger than available brokers</code></td><td>RF 3 sur un cluster d'un nœud</td><td>RF ≤ nombre de brokers</td></tr>
+      <tr><td><code>Unknown topic or partition</code></td><td>Topic absent, création auto interdite</td><td>Créer le topic, vérifier son nom</td></tr>
+      <tr><td>Le consommateur ne reçoit rien</td><td>Le groupe a déjà commité ; <code>auto.offset.reset</code> ignoré</td><td>Nouveau <code>group.id</code> ou réinitialiser les offsets</td></tr>
+      <tr><td>Conteneur <code>Exited (137)</code></td><td>Mémoire insuffisante</td><td>Plus de RAM pour Docker Desktop</td></tr>
+    </table>
+  </div>
+</section>
+
+<section class="slide" data-part="1" data-title="Fin de la partie 2">
+  <div class="eyebrow"><span class="tag">Récap</span> Ce soir, vous avez…</div>
+  <h2>Un cluster qui tient debout, et vous savez pourquoi</h2>
+  <div class="body">
+    <div class="cols">
+      <ul class="list">
+        <li>Démarré Kafka 4 en KRaft, d'abord sur un nœud, puis sur trois.</li>
+        <li>Compris les trois listeners et la différence entre écoute et adresse annoncée.</li>
+        <li>Branché Kafbat UI sur le réseau interne.</li>
+        <li>Créé un topic, produit, consommé, mesuré le lag.</li>
+        <li>Arrêté des brokers et observé l'ISR.</li>
+        <li>Écrit un producteur et un consommateur en Python.</li>
+      </ul>
+      <div class="key" data-k="Pour demain matin"><p>Gardez votre dossier et votre cluster. Demain, <code>docker compose up -d</code>, et on attaque le cas pratique Verdalis.</p><p>Vérifiez ce soir que <code>producer_minimal.py</code> fonctionne depuis votre machine.</p></div>
+    </div>
+  </div>
+</section>
+<!-- ======================================================= PARTIE 3 -->
+<section class="slide divider" data-part="2" data-title="Partie 3 · Pratiquer" data-section="Pratiquer">
+  <div class="eyebrow"><span class="tag">Partition 2</span> Jour 2 · matin</div>
+  <h1>Pratiquer</h1>
+  <p>Verdalis vous confie son premier pipeline : des capteurs jusqu'aux alertes. En binôme, sans le formateur au clavier.</p>
+  <div class="ptape"><span>P0</span><span>P1</span><span class="on">P2</span></div>
+</section>
+
+<section class="slide" data-part="2" data-title="La mission">
+  <div class="eyebrow"><span class="tag">Cas pratique</span> La mission</div>
+  <h2>« Prévenez-nous quand une serre surchauffe »</h2>
+  <div class="body">
+    <div class="dgw"><svg class="dg" viewBox="0 0 1100 310" role="img" aria-label="Pipeline du cas pratique : simulateur, topic de mesures, alerting et archivage"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahp" d="M0,0 L10,5 L0,10 z"/></marker><marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahpa" d="M0,0 L10,5 L0,10 z"/></marker></defs><rect class="box" x="20" y="120" width="160" height="70" rx="6"/><text class="strong" x="100.0" y="152.0" text-anchor="middle">simulateur.py</text><text class="small mut" x="100.0" y="170.0" text-anchor="middle">120 mesures / 2 s</text><line class="ln lnA" x1="182" y1="155" x2="256" y2="155" marker-end="url(#aha)"/><rect class="acc" x="258" y="110" width="200" height="90" rx="6"/><text class="mono" x="358.0" y="152.0" text-anchor="middle">verdalis.mesures</text><text class="small mut" x="358.0" y="170.0" text-anchor="middle">6 partitions · RF 3</text><rect class="frame" x="520" y="20" width="250" height="120" rx="8"/><text class="small acc" x="535" y="42" text-anchor="start">groupe verdalis-alerting</text><rect class="box" x="540" y="56" width="210" height="64" rx="6"/><text class="strong" x="645.0" y="85.0" text-anchor="middle">alerting.py × N</text><text class="small mut" x="645.0" y="103.0" text-anchor="middle">seuils dépassés ?</text><path class="ln lnA" d="M460,140 C 500,140 500,88 538,88" marker-end="url(#aha)"/><line class="ln lnA" x1="752" y1="88" x2="818" y2="88" marker-end="url(#aha)"/><rect class="acc" x="820" y="48" width="180" height="80" rx="6"/><text class="mono" x="910.0" y="85.0" text-anchor="middle">verdalis.alertes</text><text class="small mut" x="910.0" y="103.0" text-anchor="middle">3 partitions · RF 3</text><line class="ln" x1="910" y1="130" x2="910" y2="168" marker-end="url(#ah)"/><text class="small mut" x="910" y="188" text-anchor="middle">consumer console</text><rect class="frame" x="520" y="180" width="250" height="120" rx="8"/><text class="small mut" x="535" y="202" text-anchor="start">groupe verdalis-archivage</text><rect class="box" x="540" y="216" width="210" height="64" rx="6"/><text class="strong" x="645.0" y="245.0" text-anchor="middle">archivage.py</text><text class="small mut" x="645.0" y="263.0" text-anchor="middle">tout, depuis le début</text><path class="ln" d="M460,172 C 500,172 500,248 538,248" marker-end="url(#ah)"/><line class="ln" x1="752" y1="248" x2="818" y2="248" marker-end="url(#ah)"/><rect class="box" x="820" y="218" width="180" height="60" rx="6"/><text class="mono" x="910.0" y="253.0" text-anchor="middle">archivage.csv</text></svg></div>
+    <p class="lead">Le technicien de Verdalis veut une alerte dès qu'une serre dépasse un seuil. L'agronome veut, en parallèle, un historique complet dans un fichier. Les deux ne doivent pas se gêner.</p>
+  </div>
+  <aside class="n">Former les binômes en mélangeant les profils (un plus à l'aise en Python avec un plus à l'aise en Docker). Vérifier que chaque binôme a un cluster qui tourne avant de lancer le chrono.</aside>
+</section>
+
+<section class="slide" data-part="2" data-title="Déroulé du cas pratique">
+  <div class="eyebrow"><span class="tag">Cas pratique</span> Déroulé et règles</div>
+  <h2>Six exercices, une correction commune</h2>
+  <div class="body">
+    <div class="cols w64">
+      <table class="t">
+        <tr><th>Horaire</th><th>Exercice</th><th>Durée</th></tr>
+        <tr><td>9 h 00</td><td>Présentation, vérification des clusters</td><td>10 min</td></tr>
+        <tr><td>9 h 10</td><td>1 · Les topics</td><td>15 min</td></tr>
+        <tr><td>9 h 25</td><td>2 · Le simulateur de capteurs</td><td>35 min</td></tr>
+        <tr><td>10 h 00</td><td>3 · Le service d'alerte</td><td>35 min</td></tr>
+        <tr><td>10 h 35</td><td>Pause</td><td>15 min</td></tr>
+        <tr><td>10 h 50</td><td>4 · Passage à l'échelle</td><td>20 min</td></tr>
+        <tr><td>11 h 10</td><td>5 · Archivage et rejeu</td><td>20 min</td></tr>
+        <tr><td>—</td><td>6 · Bonus : pannes</td><td>si le temps le permet</td></tr>
+        <tr class="hl"><td>11 h 30</td><td>Correction collective</td><td>60 min</td></tr>
+      </table>
+      <div class="stack">
+        <ul class="list">
+          <li>Travail en <strong>binôme</strong>, un seul clavier qui tourne à chaque exercice.</li>
+          <li>Chaque exercice a des <strong>questions</strong> : notez vos réponses, on les compare à la correction.</li>
+          <li>Bloqués plus de 10 minutes ? Levez la main. Chercher fait partie de l'exercice ; rester bloqué, non.</li>
+          <li>Les slides d'hier sont votre documentation.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <aside class="n">Les slides de correction sont masquées. Touche C ou bouton « Corrigé » pour les afficher à 11 h 30.</aside>
+</section>
+
+<section class="slide" data-part="2" data-title="Le contrat des données">
+  <div class="eyebrow"><span class="tag">Cas pratique</span> Formats imposés</div>
+  <h2>Le contrat : ce que chaque message doit contenir</h2>
+  <div class="body">
+    <div class="cols">
+      <div class="stack">
+        <p class="small muted"><code>verdalis.mesures</code> · clé = <code>serre_id</code></p>
+        <div class="code sm"><pre><code data-lang="json">{
+  "serre_id": "serre-07",
+  "capteur_id": "serre-07-temperature",
+  "type": "temperature",
+  "valeur": 33.4,
+  "unite": "°C",
+  "ts": "2026-10-06T09:41:12.503+00:00"
+}</code></pre></div>
+        <p class="small muted"><code>verdalis.alertes</code> · clé = <code>serre_id</code></p>
+        <div class="code sm"><pre><code data-lang="json">{
+  "serre_id": "serre-07", "type": "temperature",
+  "valeur": 33.4, "seuil": 32.0,
+  "ts_mesure": "2026-10-06T09:41:12.503+00:00",
+  "origine": "p2@18234"
+}</code></pre></div>
+      </div>
+      <div class="stack">
+        <table class="t">
+          <tr><th>Type</th><th>Valeur typique</th><th>Alerte si</th></tr>
+          <tr><td><code>temperature</code></td><td>24 °C ± 4</td><td>&gt; 32 °C</td></tr>
+          <tr><td><code>humidite</code></td><td>65 % ± 10</td><td>&lt; 40 %</td></tr>
+          <tr><td><code>co2</code></td><td>800 ppm ± 200</td><td>&gt; 1 200 ppm</td></tr>
+        </table>
+        <div class="key" data-k="Pourquoi un contrat ?"><p>Le producteur et le consommateur ne se parlent jamais : le format est leur seul accord. Changer un nom de champ sans prévenir casse tous les lecteurs.</p></div>
+        <p class="small muted"><code>origine</code> = partition et offset de la mesure qui a déclenché l'alerte. Pratique pour enquêter.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="2" data-title="Exercice 1 · Les topics">
+  <div class="eyebrow"><span class="tag">Exercice 1</span> Les topics</div>
+  <h2>Préparer les deux topics</h2>
+  <div class="body">
+    <div class="exo-meta"><span class="pill a">15 min</span><span class="pill">CLI ou Kafbat UI</span></div>
+    <div class="cols">
+      <div class="stack">
+        <h3>À faire</h3>
+        <ol class="steps">
+          <li>Vérifier que <code>verdalis.mesures</code> existe avec 6 partitions et RF 3. Sinon, le créer.</li>
+          <li>Créer <code>verdalis.alertes</code> : 3 partitions, RF 3, rétention de <strong>30 jours</strong>.</li>
+          <li>Vérifier les deux topics avec <code>--describe</code> et dans Kafbat UI.</li>
+        </ol>
+      </div>
+      <div class="stack">
+        <h3>Questions</h3>
+        <ul class="list">
+          <li>Q1.1 Quelle valeur de <code>retention.ms</code> pour 30 jours ?</li>
+          <li>Q1.2 Pourquoi garder les alertes plus longtemps que les mesures ?</li>
+          <li>Q1.3 Pourquoi moins de partitions pour les alertes ?</li>
+          <li>Q1.4 Que se passe-t-il si on crée <code>verdalis.alertes</code> avec RF 4 ?</li>
+        </ul>
+      </div>
+    </div>
+    <div class="analogy"><p>Indice : <code>--config cle=valeur</code> sur la commande de création.</p></div>
+  </div>
+</section>
+
+<section class="slide" data-part="2" data-title="Exercice 2 · Le simulateur">
+  <div class="eyebrow"><span class="tag">Exercice 2</span> Producteur</div>
+  <h2>Écrire <code>simulateur.py</code></h2>
+  <div class="body">
+    <div class="exo-meta"><span class="pill a">35 min</span><span class="pill">Python · Producer</span></div>
+    <div class="cols">
+      <div class="stack">
+        <h3>Cahier des charges</h3>
+        <ul class="list">
+          <li>40 serres (<code>serre-01</code> à <code>serre-40</code>) × 3 capteurs.</li>
+          <li>Toutes les 2 secondes, une mesure par capteur (120 messages).</li>
+          <li>Valeurs tirées avec <code>random.gauss(moyenne, écart)</code>, selon le contrat.</li>
+          <li>Clé = <code>serre_id</code>, valeur = JSON du contrat.</li>
+          <li><code>acks=all</code>, idempotence activée, <code>linger.ms</code> et compression.</li>
+          <li>Un callback qui compte les échecs.</li>
+          <li><code>Ctrl+C</code> arrête proprement, sans perdre de message.</li>
+        </ul>
+      </div>
+      <div class="stack">
+        <h3>Vérifications</h3>
+        <ul class="list">
+          <li>Dans Kafbat UI, les messages arrivent sur les 6 partitions.</li>
+          <li>Toutes les mesures de <code>serre-07</code> sont dans la même partition.</li>
+        </ul>
+        <h3>Questions</h3>
+        <ul class="list">
+          <li>Q2.1 Pourquoi appeler <code>poll(0)</code> régulièrement ?</li>
+          <li>Q2.2 Que se passe-t-il si on oublie <code>flush()</code> à l'arrêt ?</li>
+          <li>Q2.3 Combien de mesures par jour produit ce simulateur ?</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="2" data-title="Exercice 3 · Le service d'alerte">
+  <div class="eyebrow"><span class="tag">Exercice 3</span> Consommer et produire</div>
+  <h2>Écrire <code>alerting.py</code></h2>
+  <div class="body">
+    <div class="exo-meta"><span class="pill a">35 min</span><span class="pill">Python · Consumer + Producer</span></div>
+    <div class="cols">
+      <div class="stack">
+        <h3>Cahier des charges</h3>
+        <ul class="list">
+          <li>Groupe <code>verdalis-alerting</code>, abonné à <code>verdalis.mesures</code>.</li>
+          <li>Pour chaque mesure hors seuil, publier une alerte conforme au contrat dans <code>verdalis.alertes</code>.</li>
+          <li>Afficher les partitions attribuées au démarrage (<code>on_assign</code>).</li>
+          <li>Commit <strong>manuel</strong>, uniquement quand les alertes correspondantes sont bien écrites.</li>
+          <li>Un message illisible ne doit pas arrêter le service.</li>
+        </ul>
+      </div>
+      <div class="stack">
+        <h3>Vérification</h3>
+        <p>Un consommateur console sur <code>verdalis.alertes</code> affiche les alertes en direct.</p>
+        <h3>Questions</h3>
+        <ul class="list">
+          <li>Q3.1 Le service plante entre l'envoi d'une alerte et le commit. Que se passe-t-il au redémarrage ?</li>
+          <li>Q3.2 Et si on commitait <em>avant</em> d'envoyer l'alerte ?</li>
+          <li>Q3.3 Pourquoi ne pas commiter après chaque message ?</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="2" data-title="Exercice 4 · Passage à l'échelle">
+  <div class="eyebrow"><span class="tag">Exercice 4</span> Groupes et rééquilibrage</div>
+  <h2>Et si une seule instance ne suffit plus ?</h2>
+  <div class="body">
+    <div class="exo-meta"><span class="pill a">20 min</span><span class="pill">Plusieurs terminaux</span><span class="pill">Kafbat UI › Consumers</span></div>
+    <div class="cols">
+      <div class="stack">
+        <h3>Expérience</h3>
+        <ol class="steps">
+          <li>Lancer 1 instance de <code>alerting.py</code>. Noter ses partitions.</li>
+          <li>En lancer 2 autres (3 au total). Noter les partitions de chacune.</li>
+          <li>Arrêter une instance avec <code>Ctrl+C</code>. Observer.</li>
+          <li>Monter à 7 instances. Observer.</li>
+        </ol>
+      </div>
+      <div class="stack">
+        <h3>Questions</h3>
+        <ul class="list">
+          <li>Q4.1 Combien de partitions par instance avec 3 instances ?</li>
+          <li>Q4.2 Que devient la 7<sup>e</sup> instance ?</li>
+          <li>Q4.3 Les alertes de <code>serre-07</code> sont-elles toujours traitées dans l'ordre ? Pourquoi ?</li>
+          <li>Q4.4 Verdalis passe à 400 serres. Que faudrait-il changer, et quand aurait-il fallu y penser ?</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="2" data-title="Exercice 5 · Archivage et rejeu">
+  <div class="eyebrow"><span class="tag">Exercice 5</span> Un deuxième groupe</div>
+  <h2>Écrire <code>archivage.py</code> et rejouer l'historique</h2>
+  <div class="body">
+    <div class="exo-meta"><span class="pill a">20 min</span><span class="pill">Python · Consumer · CLI</span></div>
+    <div class="cols">
+      <div class="stack">
+        <h3>À faire</h3>
+        <ol class="steps">
+          <li>Un consommateur du groupe <code>verdalis-archivage</code> écrit chaque mesure dans un CSV : ts, serre, type, valeur, partition, offset.</li>
+          <li>Le lancer pendant que <code>alerting.py</code> tourne. Comparer les lags des deux groupes.</li>
+          <li>L'arrêter, le relancer. Relit-il tout ?</li>
+          <li>Faire relire <strong>tout l'historique</strong> au groupe, sans changer son nom.</li>
+        </ol>
+      </div>
+      <div class="stack">
+        <h3>Questions</h3>
+        <ul class="list">
+          <li>Q5.1 L'archivage ralentit-il les alertes ? Pourquoi ?</li>
+          <li>Q5.2 Pourquoi <code>auto.offset.reset=earliest</code> ne suffit-il pas pour tout relire la deuxième fois ?</li>
+          <li>Q5.3 Jusqu'où peut-on remonter dans le passé ?</li>
+        </ul>
+        <div class="analogy"><p>Indice : <code>kafka-consumer-groups.sh --reset-offsets</code>, et le groupe doit être arrêté.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="2" data-title="Exercice 6 · Bonus pannes">
+  <div class="eyebrow"><span class="tag">Exercice 6 · Bonus</span> Ingénierie du chaos</div>
+  <h2>Casser le cluster pendant que tout tourne</h2>
+  <div class="body">
+    <div class="exo-meta"><span class="pill w">Bonus</span><span class="pill">docker stop / start</span></div>
+    <div class="cols">
+      <div class="stack">
+        <h3>Expérience</h3>
+        <ol class="steps">
+          <li>Simulateur et alerting en marche : <code>docker stop kafka-2</code>.</li>
+          <li>Puis <code>docker stop kafka-3</code>. Regarder la sortie du simulateur.</li>
+          <li>Redémarrer les deux. Attendre le retour à la normale.</li>
+          <li>Arrêter le simulateur. Comparer son total « envoyées » à la somme des offsets de fin de <code>verdalis.mesures</code> (<code>kafka-get-offsets.sh</code>).</li>
+        </ol>
+      </div>
+      <div class="stack">
+        <h3>Questions</h3>
+        <ul class="list">
+          <li>Q6.1 Que remarquez-vous avec un seul broker arrêté ?</li>
+          <li>Q6.2 Avec deux ? Les messages sont-ils perdus, ou en attente ?</li>
+          <li>Q6.3 Les deux totaux sont-ils égaux ? Qu'est-ce que ça prouve ?</li>
+          <li>Q6.4 Qu'aurait changé <code>acks=1</code> sans idempotence ?</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="2" data-title="Auto-évaluation">
+  <div class="eyebrow"><span class="tag">Cas pratique</span> Avant la correction</div>
+  <h2>Votre grille d'auto-évaluation</h2>
+  <div class="body">
+    <div class="cols">
+      <table class="t">
+        <tr><th>Critère</th><th>Vérification</th></tr>
+        <tr><td>Topics conformes</td><td><code>--describe</code> : partitions, RF, rétention</td></tr>
+        <tr><td>Clés correctes</td><td>Une serre = une partition</td></tr>
+        <tr><td>Aucune perte à l'arrêt</td><td><code>flush()</code> à la sortie du simulateur</td></tr>
+        <tr><td>Alertes justes</td><td>Aucune alerte sous le seuil</td></tr>
+        <tr><td>Commit au bon endroit</td><td>Après l'écriture de l'alerte</td></tr>
+        <tr><td>Robustesse</td><td>Un JSON invalide n'arrête pas le service</td></tr>
+        <tr><td>Groupes indépendants</td><td>Deux lags différents dans Kafbat UI</td></tr>
+      </table>
+      <div class="stack">
+        <div class="key" data-k="Test du message piège"><p>Envoyez à la main, depuis Kafbat UI, un message <code>serre-99|pas du json</code> dans <code>verdalis.mesures</code>. Votre alerting survit-il ?</p></div>
+        <p class="muted">À 11 h 30, on corrige ensemble, exercice par exercice. Préparez vos réponses aux questions.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================= CORRECTION -->
+<section class="slide divider" data-part="2" data-title="Correction" data-section="Correction">
+  <div class="eyebrow"><span class="tag">Partition 2</span> 11 h 30</div>
+  <h1>Correction</h1>
+  <p>Chaque binôme présente une réponse, puis on compare avec le corrigé. Il existe plusieurs bonnes solutions : on discute des compromis.</p>
+  <aside class="n">Les slides suivantes sont masquées tant que le mode Corrigé n'est pas activé (touche C).</aside>
+</section>
+
+<section class="slide corrige" data-part="2" data-title="Corrigé 1 · Topics">
+  <div class="eyebrow"><span class="tag">Corrigé 1</span> Les topics</div>
+  <h2>Deux commandes, quatre réponses</h2>
+  <div class="body">
+    <div class="code"><button class="copy" type="button">Copier</button><pre><code data-lang="bash">kt --create --topic verdalis.mesures --partitions 6 --replication-factor 3
+
+kt --create --topic verdalis.alertes --partitions 3 --replication-factor 3 \
+   --config retention.ms=2592000000
+
+kt --describe --topic verdalis.alertes</code></pre></div>
+    <table class="t">
+      <tr><td>Q1.1</td><td>30 × 24 × 3 600 × 1 000 = <code>2592000000</code> ms.</td></tr>
+      <tr><td>Q1.2</td><td>Les alertes sont rares et utiles pour les enquêtes et les statistiques. Les mesures brutes sont volumineuses et déjà archivées ailleurs.</td></tr>
+      <tr><td>Q1.3</td><td>Faible volume : 3 partitions suffisent. Chaque partition a un coût (fichiers, mémoire, temps d'élection).</td></tr>
+      <tr><td>Q1.4</td><td>Refus : <code>Replication factor: 4 larger than available brokers: 3</code>.</td></tr>
+    </table>
+  </div>
+</section>
+
+<section class="slide corrige" data-part="2" data-title="Corrigé 2 · Simulateur (code)">
+  <div class="eyebrow"><span class="tag">Corrigé 2</span> simulateur.py</div>
+  <h2>Le simulateur</h2>
+  <div class="body">
+    <div class="code scroll sm"><div class="fname">simulateur.py</div><button class="copy" type="button">Copier</button><pre><code data-lang="python">"""Exercice 2 — simulateur de capteurs Verdalis (corrigé)."""
+import json
+import random
+import signal
+import time
+from datetime import datetime, timezone
+
+from confluent_kafka import Producer
+
+BOOTSTRAP = "localhost:29092,localhost:39092,localhost:49092"
+TOPIC = "verdalis.mesures"
+SERRES = [f"serre-{i:02d}" for i in range(1, 41)]
+# type : (moyenne, écart-type, unité)
+CAPTEURS = {
+    "temperature": (24.0, 4.0, "°C"),
+    "humidite": (65.0, 10.0, "%"),
+    "co2": (800.0, 200.0, "ppm"),
+}
+
+producer = Producer({
+    "bootstrap.servers": BOOTSTRAP,
+    "client.id": "simulateur-verdalis",
+    "acks": "all",
+    "enable.idempotence": True,
+    "linger.ms": 20,            # regrouper les messages en lots
+    "compression.type": "lz4",
+})
+
+erreurs = 0
+
+
+def rapport(err, msg):
+    global erreurs
+    if err is not None:
+        erreurs += 1
+        print(f"ÉCHEC {msg.key().decode()} : {err}")
+
+
+def mesure(serre, type_, moyenne, ecart, unite):
+    return {
+        "serre_id": serre,
+        "capteur_id": f"{serre}-{type_}",
+        "type": type_,
+        "valeur": round(random.gauss(moyenne, ecart), 1),
+        "unite": unite,
+        "ts": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+en_cours = True
+
+
+def arreter(*_):
+    global en_cours
+    en_cours = False
+
+
+signal.signal(signal.SIGINT, arreter)
+
+envoyes = 0
+while en_cours:
+    for serre in SERRES:
+        for type_, (moyenne, ecart, unite) in CAPTEURS.items():
+            evt = mesure(serre, type_, moyenne, ecart, unite)
+            producer.produce(TOPIC, key=serre, value=json.dumps(evt), callback=rapport)
+            envoyes += 1
+    producer.poll(0)            # déclenche les callbacks en attente
+    print(f"{envoyes} mesures envoyées, {erreurs} échecs")
+    time.sleep(2)
+
+restants = producer.flush(10)
+print(f"Arrêt. Messages non livrés : {restants}")</code></pre></div>
+  </div>
+</section>
+
+<section class="slide corrige" data-part="2" data-title="Corrigé 2 · Points clés">
+  <div class="eyebrow"><span class="tag">Corrigé 2</span> Points clés</div>
+  <h2>Ce qui fait un bon producteur</h2>
+  <div class="body">
+    <div class="cols">
+      <table class="t">
+        <tr><td>Q2.1</td><td><code>poll(0)</code> traite les réponses du broker et déclenche les callbacks. Sans lui, les rapports d'envoi s'accumulent en mémoire.</td></tr>
+        <tr><td>Q2.2</td><td>Les messages encore dans le tampon sont perdus en silence. <code>flush()</code> renvoie le nombre de messages non livrés : on l'affiche.</td></tr>
+        <tr><td>Q2.3</td><td>120 messages / 2 s = 60 / s, soit 5 184 000 mesures par jour.</td></tr>
+      </table>
+      <div class="stack">
+        <div class="key" data-k="Détails qui comptent"><p><code>key=serre</code> : Python encode la chaîne en UTF-8 automatiquement.</p><p><code>signal.SIGINT</code> transforme <code>Ctrl+C</code> en arrêt propre au lieu d'une exception au milieu d'un envoi.</p><p><code>client.id</code> rend le simulateur identifiable dans les logs du broker.</p></div>
+        <div class="warn"><p>Avec un débit très élevé, <code>produce()</code> peut lever <code>BufferError</code> (tampon plein). Réponse : appeler <code>poll()</code> puis réessayer.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide corrige" data-part="2" data-title="Corrigé 3 · Alerting (code)">
+  <div class="eyebrow"><span class="tag">Corrigé 3</span> alerting.py</div>
+  <h2>Le service d'alerte</h2>
+  <div class="body">
+    <div class="code scroll sm"><div class="fname">alerting.py</div><button class="copy" type="button">Copier</button><pre><code data-lang="python">"""Exercice 3 — service d'alerte Verdalis (corrigé)."""
+import json
+import os
+
+from confluent_kafka import Consumer, Producer
+
+BOOTSTRAP = "localhost:29092,localhost:39092,localhost:49092"
+SEUILS = {  # type : (sens, seuil)
+    "temperature": ("max", 32.0),
+    "humidite": ("min", 40.0),
+    "co2": ("max", 1200.0),
+}
+LOT = 100  # commit tous les 100 messages
+
+consumer = Consumer({
+    "bootstrap.servers": BOOTSTRAP,
+    "group.id": "verdalis-alerting",
+    "client.id": f"alerting-{os.getpid()}",
+    "auto.offset.reset": "earliest",
+    "enable.auto.commit": False,
+})
+producer = Producer({
+    "bootstrap.servers": BOOTSTRAP,
+    "acks": "all",
+    "enable.idempotence": True,
+})
+
+
+def affiche_partitions(_consumer, partitions):
+    print("Partitions attribuées :", sorted(p.partition for p in partitions))
+
+
+def depasse(m):
+    sens, seuil = SEUILS[m["type"]]
+    return m["valeur"] &gt; seuil if sens == "max" else m["valeur"] &lt; seuil
+
+
+consumer.subscribe(["verdalis.mesures"], on_assign=affiche_partitions)
+non_commites = 0
+
+try:
+    while True:
+        msg = consumer.poll(1.0)
+        if msg is None:
+            continue
+        if msg.error():
+            print("Erreur :", msg.error())
+            continue
+
+        try:
+            m = json.loads(msg.value())
+            alerte = depasse(m)
+        except (ValueError, KeyError) as exc:
+            print(f"Message ignoré p{msg.partition()}@{msg.offset()} : {exc}")
+            alerte = False
+
+        if alerte:
+            evt = {
+                "serre_id": m["serre_id"],
+                "type": m["type"],
+                "valeur": m["valeur"],
+                "seuil": SEUILS[m["type"]][1],
+                "ts_mesure": m["ts"],
+                "origine": f"p{msg.partition()}@{msg.offset()}",
+            }
+            producer.produce("verdalis.alertes", key=m["serre_id"], value=json.dumps(evt))
+            producer.poll(0)
+            print(f"ALERTE {m['serre_id']} {m['type']}={m['valeur']}")
+
+        non_commites += 1
+        if non_commites &gt;= LOT:
+            producer.flush(10)                   # 1. alertes bien écrites
+            consumer.commit(asynchronous=False)  # 2. puis on avance le marque-page
+            non_commites = 0
+except KeyboardInterrupt:
+    pass
+finally:
+    producer.flush(10)
+    consumer.close()</code></pre></div>
+  </div>
+</section>
+
+<section class="slide corrige" data-part="2" data-title="Corrigé 3 · Points clés">
+  <div class="eyebrow"><span class="tag">Corrigé 3</span> L'ordre des opérations</div>
+  <h2>Écrire l'alerte, <em>puis</em> avancer le marque-page</h2>
+  <div class="body">
+    <div class="cols">
+      <table class="t">
+        <tr><td>Q3.1</td><td>Au redémarrage, le groupe reprend au dernier commit. Les mesures depuis ce commit sont relues : certaines alertes sont envoyées <strong>deux fois</strong>. Au moins une fois.</td></tr>
+        <tr><td>Q3.2</td><td>Un crash entre le commit et l'envoi fait <strong>perdre</strong> l'alerte. Au plus une fois : inacceptable pour une surchauffe.</td></tr>
+        <tr><td>Q3.3</td><td>Un commit synchrone est un aller-retour réseau. Par lots de 100, on divise ce coût par 100, au prix de 100 messages relus au pire.</td></tr>
+      </table>
+      <div class="stack">
+        <div class="key" data-k="Le cœur de la solution"><p><code>producer.flush()</code> puis <code>consumer.commit()</code>. Le flush garantit que les alertes sont écrites avant de déclarer les mesures traitées.</p></div>
+        <div class="analogy"><p>Les doublons se gèrent côté lecteur : le champ <code>origine</code> (partition et offset) identifie l'alerte de façon unique. Un service de notification peut ignorer une <code>origine</code> déjà vue.</p></div>
+        <p class="small muted">Pour du vrai exactly-once Kafka → Kafka : producteur transactionnel et <code>send_offsets_to_transaction</code>. Hors programme aujourd'hui.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide corrige" data-part="2" data-title="Corrigé 4 · Passage à l'échelle">
+  <div class="eyebrow"><span class="tag">Corrigé 4</span> Passage à l'échelle</div>
+  <h2>Le nombre de partitions fixe le plafond</h2>
+  <div class="body">
+    <div class="cols">
+      <table class="t">
+        <tr><th>Instances</th><th>Partitions par instance</th></tr>
+        <tr><td>1</td><td>6</td></tr>
+        <tr><td>3</td><td>2 chacune (Q4.1)</td></tr>
+        <tr><td>2 (après Ctrl+C)</td><td>3 chacune, après rééquilibrage</td></tr>
+        <tr><td>7</td><td>6 instances à 1 partition, la 7<sup>e</sup> à 0 (Q4.2)</td></tr>
+      </table>
+      <div class="stack">
+        <p><strong>Q4.3</strong> Oui : <code>serre-07</code> est toujours dans la même partition, lue par une seule instance à la fois. Après un rééquilibrage, l'instance suivante reprend au dernier commit, dans l'ordre.</p>
+        <p><strong>Q4.4</strong> Plus d'instances ne suffira pas au-delà de 6. Il faut plus de partitions, ce qui déplace des clés. Il fallait y penser à la <strong>création</strong> du topic : on surdimensionne souvent (12, 24).</p>
+        <div class="analogy"><p>7 serveurs pour 6 tables : le 7<sup>e</sup> attend en cuisine. Utile quand même : il remplace immédiatement un collègue malade.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide corrige" data-part="2" data-title="Corrigé 5 · Archivage et rejeu">
+  <div class="eyebrow"><span class="tag">Corrigé 5</span> Archivage et rejeu</div>
+  <h2>Deux groupes, deux marque-pages</h2>
+  <div class="body">
+    <div class="cols" style="flex:1;min-height:0;align-items:stretch">
+      <div class="code scroll sm"><div class="fname">archivage.py</div><button class="copy" type="button">Copier</button><pre><code data-lang="python">"""Exercice 5 — archivage des mesures dans un CSV (corrigé)."""
+import csv
+import json
+import sys
+
+from confluent_kafka import Consumer
+
+GROUPE = sys.argv[1] if len(sys.argv) &gt; 1 else "verdalis-archivage"
+
+consumer = Consumer({
+    "bootstrap.servers": "localhost:29092,localhost:39092,localhost:49092",
+    "group.id": GROUPE,
+    "auto.offset.reset": "earliest",
+    "enable.auto.commit": True,        # acceptable ici : un doublon dans un CSV n'est pas grave
+})
+consumer.subscribe(["verdalis.mesures"])
+
+with open(f"{GROUPE}.csv", "a", newline="", encoding="utf-8") as f:
+    ecrivain = csv.writer(f)
+    lignes = 0
+    try:
+        while True:
+            msg = consumer.poll(1.0)
+            if msg is None or msg.error():
+                continue
+            m = json.loads(msg.value())
+            ecrivain.writerow([m["ts"], m["serre_id"], m["type"], m["valeur"],
+                               msg.partition(), msg.offset()])
+            lignes += 1
+            if lignes % 1000 == 0:
+                f.flush()
+                print(f"{lignes} lignes archivées")
+    except KeyboardInterrupt:
+        pass
+    finally:
+        consumer.close()</code></pre></div>
+      <div class="stack">
+        <div class="code sm"><button class="copy" type="button">Copier</button><pre><code data-lang="bash"># Groupe arrêté, sinon refus
+docker exec -it kafka-1 /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server kafka-1:19092 --group verdalis-archivage \
+  --topic verdalis.mesures --reset-offsets --to-earliest --dry-run
+# puis --execute à la place de --dry-run</code></pre></div>
+        <p class="small"><strong>Q5.1</strong> Non. Chaque groupe lit à son rythme, avec ses propres offsets.</p>
+        <p class="small"><strong>Q5.2</strong> <code>auto.offset.reset</code> ne s'applique que si le groupe n'a <strong>aucun</strong> offset commité.</p>
+        <p class="small"><strong>Q5.3</strong> Jusqu'au plus ancien segment encore présent : la rétention (7 jours).</p>
+      </div>
+    </div>
+  </div>
+  <aside class="n">Alternative au reset : lancer python archivage.py verdalis-archivage-v2, un groupe neuf qui part du début grâce à earliest. Le script accepte le nom du groupe en argument.</aside>
+</section>
+
+<section class="slide corrige" data-part="2" data-title="Corrigé 6 · Pannes">
+  <div class="eyebrow"><span class="tag">Corrigé 6</span> Pannes</div>
+  <h2>Kafka ralentit, attend, mais ne ment pas</h2>
+  <div class="body">
+    <div class="cols">
+      <table class="t">
+        <tr><td>Q6.1</td><td>Rien de visible côté applications, à part quelques secondes de latence. Les leaders migrent, l'ISR passe à 2 copies, c'est suffisant.</td></tr>
+        <tr><td>Q6.2</td><td>Plus de quorum, plus d'écriture confirmée. Les messages attendent dans le tampon du producteur, qui réessaie. Ils expirent après <code>message.timeout.ms</code> (5 min par défaut) : le callback le signale.</td></tr>
+        <tr><td>Q6.3</td><td>Si les brokers sont revenus à temps : égalité. Aucune perte, aucun doublon, grâce à <code>acks=all</code> et l'idempotence.</td></tr>
+        <tr><td>Q6.4</td><td><code>acks=1</code> : une écriture confirmée par un leader qui meurt aussitôt peut disparaître. Sans idempotence : des retries peuvent créer des doublons.</td></tr>
+      </table>
+      <div class="code sm"><button class="copy" type="button">Copier</button><pre><code data-lang="bash"># Offset de fin de chaque partition
+docker exec -it kafka-1 /opt/kafka/bin/kafka-get-offsets.sh \
+  --bootstrap-server kafka-1:19092 --topic verdalis.mesures
+
+# verdalis.mesures:0:31207
+# verdalis.mesures:1:28890
+# ...  la somme = messages écrits</code></pre></div>
+    </div>
+  </div>
+  <aside class="n">Si la somme dépasse le total du simulateur, c'est qu'il y a eu des messages manuels (console, Kafbat UI) ou un simulateur relancé. Si elle est inférieure, chercher les ÉCHEC dans la sortie du simulateur.</aside>
+</section>
+
+<section class="slide corrige" data-part="2" data-title="Erreurs fréquentes du TP">
+  <div class="eyebrow"><span class="tag">Corrigé</span> Ce qu'on voit souvent</div>
+  <h2>Les erreurs classiques de ce cas pratique</h2>
+  <div class="body">
+    <div class="cards c2">
+      <div class="card"><span class="k">Réseau</span><h3>Un script Python qui vise <code>kafka-1:19092</code></h3><p>Ce nom n'existe que dans Docker. Depuis votre machine : <code>localhost:29092</code>.</p></div>
+      <div class="card"><span class="k">Groupe</span><h3>Le même <code>group.id</code> pour alerting et archivage</h3><p>Ils se partagent alors les partitions : chacun ne voit qu'une partie des mesures.</p></div>
+      <div class="card"><span class="k">Clé</span><h3>Oublier la clé</h3><p>Les mesures d'une serre se dispersent : plus aucune garantie d'ordre.</p></div>
+      <div class="card"><span class="k">Robustesse</span><h3><code>json.loads</code> sans <code>try</code></h3><p>Un seul message invalide fait planter le service, qui le relit au redémarrage, et replante. Poison pill.</p></div>
+    </div>
+  </div>
+  <aside class="n">Le poison pill mène naturellement à la notion de dead letter queue : on publie les messages invalides dans un topic à part (verdalis.mesures.dlq) pour les examiner plus tard.</aside>
+</section>
+
+<!-- ======================================================= CONCLUSION -->
+<section class="slide" data-part="2" data-title="Bilan">
+  <div class="eyebrow"><span class="tag">Conclusion</span> Bilan</div>
+  <h2>En une journée et demie, vous avez…</h2>
+  <div class="body">
+    <div class="cards">
+      <div class="card"><span class="k">Partition 0</span><h3>Compris</h3><p>Le log distribué, les topics, partitions et offsets, la réplication, les groupes, les garanties de livraison, KRaft.</p></div>
+      <div class="card"><span class="k">Partition 1</span><h3>Construit</h3><p>Un cluster Kafka 4 de 3 nœuds et Kafbat UI, avec chaque variable de configuration expliquée.</p></div>
+      <div class="card"><span class="k">Partition 2</span><h3>Programmé</h3><p>Un pipeline Verdalis complet : simulateur, alerting, archivage, montée en charge et pannes.</p></div>
+    </div>
+    <div class="key" data-k="Retour aux attentes du premier matin"><p>Reprenons la liste notée au tableau hier : qu'est-ce qui est couvert, qu'est-ce qui reste ?</p></div>
+  </div>
+</section>
+
+<section class="slide" data-part="2" data-title="Aller plus loin">
+  <div class="eyebrow"><span class="tag">Conclusion</span> Vers la production</div>
+  <h2>Ce qui sépare notre cluster d'un cluster de production</h2>
+  <div class="body">
+    <div class="cols">
+      <table class="t">
+        <tr><th>Sujet</th><th>En formation</th><th>En production</th></tr>
+        <tr><td>Sécurité</td><td><code>PLAINTEXT</code></td><td>TLS + SASL, ACL par topic</td></tr>
+        <tr><td>Rôles</td><td>Mode combiné</td><td>Contrôleurs dédiés</td></tr>
+        <tr><td>Machines</td><td>3 conteneurs sur un PC</td><td>Machines ou zones distinctes</td></tr>
+        <tr><td>Supervision</td><td>Kafbat UI</td><td>Métriques JMX, Prometheus, alertes sur le lag</td></tr>
+        <tr><td>Formats</td><td>JSON libre</td><td>Schema Registry (Avro, Protobuf)</td></tr>
+        <tr><td>Hébergement</td><td>Docker Compose</td><td>Kubernetes (Strimzi) ou service managé</td></tr>
+      </table>
+      <div class="stack">
+        <h3>Prochaines notions à explorer</h3>
+        <ul class="list">
+          <li>Kafka Connect, pour brancher une base sans code</li>
+          <li>Kafka Streams ou Flink, pour agréger (moyenne par serre et par heure)</li>
+          <li>Transactions et exactly-once</li>
+          <li>Share groups : Kafka comme file d'attente</li>
+          <li>Dead letter queue et gestion des erreurs</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-part="2" data-title="Ressources">
+  <div class="eyebrow"><span class="tag">Conclusion</span> Ressources</div>
+  <h2>Pour continuer seul</h2>
+  <div class="body">
+    <div class="cards c2">
+      <div class="card"><span class="k">Référence</span><h3>Documentation Apache Kafka</h3><p><a href="https://kafka.apache.org/documentation/">kafka.apache.org/documentation</a> : configuration, protocole, opérations.</p></div>
+      <div class="card"><span class="k">Docker</span><h3>Exemples Docker officiels</h3><p><a href="https://github.com/apache/kafka/tree/trunk/docker/examples">github.com/apache/kafka › docker/examples</a> : nœud seul, clusters, SSL, SASL.</p></div>
+      <div class="card"><span class="k">Python</span><h3>confluent-kafka-python</h3><p><a href="https://github.com/confluentinc/confluent-kafka-python">github.com/confluentinc/confluent-kafka-python</a> et la liste des réglages de librdkafka (CONFIGURATION.md).</p></div>
+      <div class="card"><span class="k">Interface</span><h3>Kafbat UI</h3><p><a href="https://github.com/kafbat/kafka-ui">github.com/kafbat/kafka-ui</a> : configuration, authentification, plusieurs clusters.</p></div>
+    </div>
+    <p class="muted small">Livre de référence : <em>Kafka: The Definitive Guide</em> (O'Reilly, 2<sup>e</sup> édition). Écrit avant Kafka 4 : les chapitres ZooKeeper sont à lire comme de l'histoire.</p>
+  </div>
+</section>
+
+<section class="slide title" data-part="2" data-title="Merci">
+  <div class="eyebrow"><span class="tag">Fin</span> Formation Kafka</div>
+  <div class="stack" style="gap:18px">
+    <h1>Merci.<br>Des questions ?</h1>
+    <p class="sub">Le log continue : ajoutez vos propres événements.</p>
+  </div>
+  <div class="tape" id="tape2" aria-hidden="true"></div>
+</section>
+
+</div></main>
+
+<nav class="bar" aria-label="Commandes de la présentation">
+  <button type="button" id="bPrev" aria-label="Slide précédente">←</button>
+  <button type="button" id="bNext" aria-label="Slide suivante">→</button>
+  <button type="button" id="bToc" aria-pressed="false">Sommaire <kbd>S</kbd></button>
+  <button type="button" id="bNotes" aria-pressed="false">Notes <kbd>N</kbd></button>
+  <button type="button" id="bCorr" aria-pressed="false">Corrigé <kbd>C</kbd></button>
+  <button type="button" id="bFull">Plein écran <kbd>F</kbd></button>
+</nav>
+<div class="help" id="help">← → pour naviguer</div>
+<div class="panel toc" id="toc" hidden role="dialog" aria-label="Sommaire"></div>
+<div class="panel notes" id="notes" hidden aria-live="polite"></div>
+
+<script>
+(function(){
+  const stage = document.getElementById('stage');
+  const all = Array.from(stage.querySelectorAll('.slide'));
+  const partName = ['Comprendre','Construire','Pratiquer'];
+  let showCorr = false, idx = 0, stacked = false;
+
+  /* ---------- coloration syntaxique minimale ---------- */
+  const RX = {
+    python: /(#[^\n]*)|("""[\s\S]*?"""|f?"(?:[^"\\\n]|\\.)*"|f?'(?:[^'\\\n]|\\.)*')|\b(import|from|as|def|return|if|elif|else|for|in|while|try|except|finally|with|global|not|and|or|is|None|True|False|continue|pass|lambda)\b/g,
+    yaml: /(#[^\n]*)|("(?:[^"\\\n]|\\.)*")|^(\s*-?\s*[A-Za-z0-9_.<-]+:)(?=\s|$)|(&amp;[\w-]+|\*[\w-]+)/gm,
+    bash: /(#[^\n]*)|('(?:[^'\n])*'|"(?:[^"\\\n]|\\.)*")|^(&gt;|\$) /gm,
+    json: /(\/\/[^\n]*)|("(?:[^"\\\n]|\\.)*")(\s*:)?/g,
+    text: null
+  };
+  document.querySelectorAll('code[data-lang]').forEach(c=>{
+    const lang = c.dataset.lang, rx = RX[lang];
+    if(!rx) return;
+    let h = c.innerHTML;
+    if(lang==='python') h = h.replace(rx,(m,com,str,kw)=> com?`<span class="tk-c">${com}</span>`: str?`<span class="tk-s">${str}</span>`:`<span class="tk-w">${kw}</span>`);
+    else if(lang==='yaml') h = h.replace(rx,(m,com,str,key,anc)=> com?`<span class="tk-c">${com}</span>`: str?`<span class="tk-s">${str}</span>`: key?`<span class="tk-k">${key}</span>`:`<span class="tk-w">${anc}</span>`);
+    else if(lang==='bash') h = h.replace(rx,(m,com,str,pr)=> com?`<span class="tk-c">${com}</span>`: str?`<span class="tk-s">${str}</span>`:`<span class="tk-p">${pr}</span> `);
+    else if(lang==='json') h = h.replace(rx,(m,com,str,colon)=> com?`<span class="tk-c">${com}</span>`: colon?`<span class="tk-k">${str}</span>${colon}`:`<span class="tk-s">${str}</span>`);
+    c.innerHTML = h;
+  });
+
+  /* ---------- copier ---------- */
+  document.addEventListener('click', e=>{
+    const b = e.target.closest('.copy'); if(!b) return;
+    const code = b.parentElement.querySelector('code');
+    const txt = code.textContent;
+    const done = ok=>{ b.textContent = ok?'Copié':'Sélectionné'; setTimeout(()=>b.textContent='Copier',1600); };
+    const select = ()=>{ const r=document.createRange(); r.selectNodeContents(code); const s=getSelection(); s.removeAllRanges(); s.addRange(r); done(false); };
+    try{ navigator.clipboard.writeText(txt).then(()=>done(true), select); }catch(_){ select(); }
+  });
+
+  /* ---------- pieds de page : chaque slide est un offset ---------- */
+  function renumber(){
+    const counters=[0,0,0]; let n=0;
+    const vis = visible();
+    all.forEach(s=>{
+      let f = s.querySelector('.foot');
+      if(!f){ f=document.createElement('div'); f.className='foot'; s.appendChild(f); }
+      if(!vis.includes(s)){ f.innerHTML=''; return; }
+      const p = +s.dataset.part||0; const off = counters[p]++; n++;
+      s.dataset.off = off;
+      f.innerHTML = `<span>formation-kafka · ${partName[p]}</span><span class="off">${n} / ${vis.length} · p${p} · offset <b>${off}</b></span>`;
+    });
+  }
+  const visible = ()=> all.filter(s=> showCorr || !s.classList.contains('corrige'));
+
+  /* ---------- mise à l'échelle / mode empilé ---------- */
+  function layout(){
+    stacked = window.innerWidth < 800;
+    document.body.classList.toggle('stacked', stacked);
+    if(stacked){ stage.style.transform='none'; }
+    else{
+      const s = Math.min(window.innerWidth/1280, window.innerHeight/720);
+      stage.style.transform = `scale(${s})`;
+    }
+    show(idx, false);
+  }
+
+  function show(i, push=true){
+    const vis = visible();
+    idx = Math.max(0, Math.min(i, vis.length-1));
+    all.forEach(s=>{ s.hidden = stacked ? !vis.includes(s) : s!==vis[idx]; });
+    document.getElementById('progress').style.width = ((idx+1)/vis.length*100)+'%';
+    const n = vis[idx].querySelector('aside.n');
+    const np = document.getElementById('notes');
+    np.innerHTML = '<b>Notes du formateur · ' + (vis[idx].dataset.title||'') + '</b>' + (n ? n.innerHTML : '<span class="muted">Pas de note pour cette slide.</span>');
+    document.querySelectorAll('#toc button[data-i]').forEach(b=> b.classList.toggle('cur', +b.dataset.i===idx));
+    if(push && !stacked){ try{ history.replaceState(null,'','#'+(idx+1)); }catch(_){} }
+  }
+
+  /* ---------- sommaire ---------- */
+  function buildToc(){
+    const toc = document.getElementById('toc');
+    const vis = visible();
+    let h = '<h3>Sommaire</h3>';
+    vis.forEach((s,i)=>{
+      if(s.dataset.section) h += `<div class="part">${s.dataset.section}</div>`;
+      else if(i===0) h += '<div class="part">Accueil</div>';
+      else if(s.dataset.title==='Bilan') h += '<div class="part">Conclusion</div>';
+      h += `<button type="button" data-i="${i}"><span>${i+1}</span>${s.dataset.title || (s.querySelector('h2,h1')||{}).textContent}</button>`;
+    });
+    toc.innerHTML = h;
+  }
+  document.getElementById('toc').addEventListener('click', e=>{
+    const b = e.target.closest('button[data-i]'); if(!b) return;
+    const i = +b.dataset.i; toggle('toc', false);
+    if(stacked) visible()[i].scrollIntoView({behavior:'smooth'}); else show(i);
+  });
+
+  function toggle(which, force){
+    const el = document.getElementById(which);
+    const on = force===undefined ? el.hidden : force;
+    el.hidden = !on;
+    document.getElementById(which==='toc'?'bToc':'bNotes').setAttribute('aria-pressed', on);
+    if(on && which==='toc'){ const c = el.querySelector('.cur'); if(c) c.scrollIntoView({block:'center'}); }
+  }
+  function toggleCorr(){
+    const cur = visible()[idx];
+    showCorr = !showCorr;
+    document.getElementById('bCorr').setAttribute('aria-pressed', showCorr);
+    renumber(); buildToc();
+    const vis = visible(); const k = vis.indexOf(cur);
+    show(k>=0 ? k : idx);
+  }
+  function full(){
+    try{
+      if(document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen().catch(()=>{});
+    }catch(_){}
+  }
+
+  document.getElementById('bPrev').onclick = ()=>show(idx-1);
+  document.getElementById('bNext').onclick = ()=>show(idx+1);
+  document.getElementById('bToc').onclick = ()=>toggle('toc');
+  document.getElementById('bNotes').onclick = ()=>toggle('notes');
+  document.getElementById('bCorr').onclick = toggleCorr;
+  document.getElementById('bFull').onclick = full;
+
+  document.addEventListener('keydown', e=>{
+    if(e.target.closest('input,textarea,[contenteditable]')) return;
+    if(e.metaKey||e.ctrlKey||e.altKey) return;
+    const k = e.key;
+    if(stacked && !['s','S','n','N','c','C'].includes(k)) return;
+    if(['ArrowRight','PageDown',' '].includes(k)){ e.preventDefault(); show(idx+1); }
+    else if(['ArrowLeft','PageUp'].includes(k)){ e.preventDefault(); show(idx-1); }
+    else if(k==='Home') show(0);
+    else if(k==='End') show(visible().length-1);
+    else if(k==='s'||k==='S') toggle('toc');
+    else if(k==='n'||k==='N') toggle('notes');
+    else if(k==='c'||k==='C') toggleCorr();
+    else if(k==='f'||k==='F') full();
+    else if(k==='Escape'){ toggle('toc',false); toggle('notes',false); }
+  });
+
+  /* navigation tactile */
+  let tx=null;
+  document.getElementById('deck').addEventListener('touchstart', e=>{ tx=e.touches[0].clientX; }, {passive:true});
+  document.getElementById('deck').addEventListener('touchend', e=>{
+    if(stacked||tx===null) return; const dx=e.changedTouches[0].clientX-tx; tx=null;
+    if(Math.abs(dx)>50) show(idx + (dx<0?1:-1));
+  });
+
+  /* ---------- rubans d'événements ---------- */
+  function tape(id, live){
+    const el = document.getElementById(id); if(!el) return;
+    const types = [['temperature','°C',24,4],['humidite','%',65,10],['co2','ppm',800,200]];
+    let off = 18230;
+    const make = (fresh)=>{
+      const s = 'serre-' + String(1+Math.floor(Math.random()*40)).padStart(2,'0');
+      const t = types[Math.floor(Math.random()*3)];
+      const v = (t[2] + (Math.random()*2-1)*t[3]).toFixed(t[0]==='co2'?0:1).replace('.',',');
+      const d = document.createElement('div'); d.className='ev'+(fresh?' new':'');
+      d.innerHTML = `<i>offset ${off++}</i><span>${s}</span><i>${t[0]} ${v} ${t[1]}</i>`;
+      el.appendChild(d);
+      while(el.children.length>12) el.removeChild(el.firstChild);
+    };
+    for(let i=0;i<9;i++) make(false);
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if(live && !reduce) setInterval(()=>{ if(!el.closest('.slide').hidden) make(true); }, 1400);
+  }
+  tape('tape', true); tape('tape2', true);
+
+  renumber(); buildToc();
+  const h = parseInt((location.hash||'').slice(1),10);
+  if(h>0) idx = h-1;
+  layout();
+  window.addEventListener('resize', layout);
+  try{ if(!localStorage.getItem('kafka-deck-help')){ setTimeout(()=>{document.getElementById('help').hidden=true;},8000); localStorage.setItem('kafka-deck-help','1'); } else document.getElementById('help').hidden=true; }catch(_){ setTimeout(()=>{document.getElementById('help').hidden=true;},8000); }
+})();
+</script>
+
+</body></html>
